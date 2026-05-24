@@ -53,3 +53,4 @@ server.log
 # Skills directory
 /skills/.env.local
 upload/
+.neis-last-push-commit
