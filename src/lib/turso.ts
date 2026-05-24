@@ -128,6 +128,7 @@ export async function seedData() {
     return;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const bcrypt = require('bcryptjs');
   const adminPassword = await bcrypt.hash('admin123', 10);
   const guruPassword = await bcrypt.hash('guru123', 10);
