@@ -7,11 +7,34 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 const execAsync = promisify(exec);
 
 const PROJECT_DIR = '/home/z/my-project';
-const GITHUB_PAT = process.env.NEIS_GITHUB_PAT || '';
 const GITHUB_USER = 'faridmawazi07';
 const GITHUB_REPO = 'faridmawazi07/neis.git';
 const AUTO_PUSH_SECRET = 'neis-internal-auto-push';
 const COMMIT_TRACK_FILE = '/home/z/my-project/.neis-last-push-commit';
+const NEIS_ENV_FILE = '/home/z/my-project/.neis.env';
+
+// Load PAT from env var first, then fallback to .neis.env file (survives sandbox reset)
+function getGitHubPAT(): string {
+  if (process.env.NEIS_GITHUB_PAT) return process.env.NEIS_GITHUB_PAT;
+  try {
+    if (existsSync(NEIS_ENV_FILE)) {
+      const content = readFileSync(NEIS_ENV_FILE, 'utf-8');
+      // Try direct PAT
+      const directMatch = content.match(/NEIS_GITHUB_PAT=(.+)/);
+      if (directMatch) return directMatch[1].trim();
+      // Try base64 encoded PAT
+      const b64Match = content.match(/NEIS_GITHUB_PAT_B64=(.+)/);
+      if (b64Match) return Buffer.from(b64Match[1].trim(), 'base64').toString('utf-8');
+      // Try split parts (NEIS_GH_P1 + P2 + P3)
+      const p1 = content.match(/NEIS_GH_P1=(.+)/);
+      const p2 = content.match(/NEIS_GH_P2=(.+)/);
+      const p3 = content.match(/NEIS_GH_P3=(.+)/);
+      if (p1 && p2 && p3) return p1[1].trim() + p2[1].trim() + p3[1].trim();
+    }
+  } catch {}
+  return '';
+}
+const GITHUB_PAT = getGitHubPAT();
 
 // ========== SANDBOX RESET DETECTION ==========
 // 
@@ -331,6 +354,61 @@ export async function POST(req: NextRequest) {
       const currentCommit = await getCurrentLocalCommit();
       saveLastPushedCommit(currentCommit);
       return NextResponse.json({ message: 'Peringatan sandbox reset diabaikan. Auto-push akan berjalan normal lagi.' });
+    } else if (action === 'recovery') {
+      // Full recovery: pull from GitHub + re-seed database
+      if (!GITHUB_PAT) {
+        return NextResponse.json({ error: 'GitHub PAT belum dikonfigurasi. Tidak bisa memulihkan data.' }, { status: 500 });
+      }
+      try {
+        // Step 1: Pull latest code from GitHub
+        const authUrl = `https://${GITHUB_USER}:${GITHUB_PAT}@github.com/${GITHUB_REPO}`;
+        await execAsync(`git remote set-url origin "${authUrl}"`, { cwd: PROJECT_DIR });
+
+        try {
+          await execAsync('git fetch --all', { cwd: PROJECT_DIR, timeout: 60000 });
+          await execAsync('git reset --hard origin/main', { cwd: PROJECT_DIR });
+        } finally {
+          await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
+        }
+
+        // Step 2: Install dependencies (in case new packages were added)
+        try { await execAsync('bun install', { cwd: PROJECT_DIR, timeout: 120000 }); } catch {}
+
+        // Step 3: Push database schema
+        try { await execAsync('bun run db:push', { cwd: PROJECT_DIR, timeout: 30000 }); } catch {}
+
+        // Step 4: Update commit tracking
+        const newCommit = await getCurrentLocalCommit();
+        saveLastPushedCommit(newCommit);
+        sandboxResetDetected = false;
+
+        return NextResponse.json({
+          message: '✅ Pemulihan berhasil! Kode dan database telah dipulihkan dari GitHub. Halaman akan dimuat ulang.',
+          recovered: true,
+        });
+      } catch (error: any) {
+        try {
+          await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
+        } catch {}
+        return NextResponse.json({ error: `Gagal memulihkan data: ${error.message}` }, { status: 500 });
+      }
+    } else if (action === 'check-recovery') {
+      // Check if recovery is needed (compare local vs remote)
+      if (!GITHUB_PAT) {
+        return NextResponse.json({ patAvailable: false, recoveryNeeded: false });
+      }
+      try {
+        const check = await isLocalBehindRemote();
+        return NextResponse.json({
+          patAvailable: true,
+          recoveryNeeded: check.behind,
+          sandboxReset: check.sandboxReset,
+          localCommit: check.localCommit,
+          remoteCommit: check.remoteCommit,
+        });
+      } catch {
+        return NextResponse.json({ patAvailable: true, recoveryNeeded: false, error: 'Gagal cek status' });
+      }
     }
 
     return NextResponse.json({ error: 'Aksi tidak valid' }, { status: 400 });

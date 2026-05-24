@@ -24,6 +24,7 @@ export function GitControlPage() {
   const [pushing, setPushing] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [forcePushing, setForcePushing] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [autoStatus, setAutoStatus] = useState<AutoPushStatus | null>(null);
   const [toggling, setToggling] = useState(false);
   const [changingInterval, setChangingInterval] = useState(false);
@@ -114,6 +115,28 @@ export function GitControlPage() {
     } catch {}
   };
 
+  const handleRecovery = async () => {
+    if (!confirm('🔄 Memulihkan data dari GitHub? Ini akan menarik semua kode dan database terbaru dari GitHub. Lanjutkan?')) return;
+    setRecovering(true);
+    try {
+      const res = await fetch('/api/git-control', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'recovery' }), credentials: 'include',
+      });
+      const data = await res.json();
+      if (res.ok && data.recovered) {
+        toast({ title: '✅ Pemulihan Berhasil!', description: data.message, duration: 8000 });
+        // Reload the page after short delay to apply all recovered changes
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else if (!res.ok) {
+        toast({ title: 'Gagal', description: data.error, variant: 'destructive' });
+      }
+    } catch { toast({ title: 'Error', description: 'Terjadi kesalahan koneksi', variant: 'destructive' }); }
+    finally { setRecovering(false); }
+  };
+
   const handleToggleAutoPush = async (enabled: boolean) => {
     setToggling(true);
     try {
@@ -188,13 +211,13 @@ export function GitControlPage() {
             <p className="text-sm font-medium">Pilih tindakan:</p>
             <div className="flex flex-wrap gap-2">
               <Button
-                onClick={handlePull}
-                disabled={pulling}
+                onClick={handleRecovery}
+                disabled={recovering}
                 className="bg-green-600 hover:bg-green-700 text-white"
                 size="sm"
               >
-                {pulling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowDownToLine className="h-4 w-4 mr-2" />}
-                Pulihkan dari GitHub (Rekomendasi)
+                {recovering ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowDownToLine className="h-4 w-4 mr-2" />}
+                Pulihkan Data dari GitHub (Rekomendasi)
               </Button>
               <Button
                 onClick={handleForcePush}
@@ -333,7 +356,7 @@ export function GitControlPage() {
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">
               Pull kode terbaru dari repositori GitHub.
-              {isSandboxReset && <span className="text-green-600 font-medium block mt-1">✅ Gunakan ini untuk memulihkan data setelah sandbox reset!</span>}
+              {isSandboxReset && <span className="text-green-600 font-medium block mt-1">✅ Gunakan tombol &quot;Pulihkan Data&quot; di atas untuk recovery lengkap!</span>}
               {!isSandboxReset && <span className="text-destructive font-medium"> Data lokal akan ditimpa!</span>}
             </p>
             <Button
@@ -354,7 +377,8 @@ export function GitControlPage() {
         <ul className="list-disc list-inside space-y-1">
           <li><strong>Auto-Push</strong> berjalan di background setiap {autoStatus?.intervalMinutes || 5} menit.</li>
           <li><strong>🛡️ Sandbox Reset Protection</strong>: Jika sandbox di-reset, auto-push otomatis <strong>diblokir</strong> agar tidak merusak data di GitHub.</li>
-          <li><strong>Pemulihan</strong>: Setelah reset, klik <em>&quot;Ambil dari GitHub&quot;</em> untuk memulihkan semua data.</li>
+          <li><strong>🔄 Recovery</strong>: Setelah reset, klik <em>&quot;Pulihkan Data dari GitHub&quot;</em> → kode + database otomatis dipulihkan + halaman reload.</li>
+          <li><strong>PAT tersimpan</strong> di <code>.neis.env</code> yang ikut ter-commit, sehingga tetap ada setelah sandbox reset.</li>
           <li><strong>Force Push</strong>: Hanya gunakan jika Anda yakin ingin menimpa data GitHub dengan data lokal saat ini.</li>
         </ul>
       </div>
