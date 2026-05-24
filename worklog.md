@@ -29,3 +29,24 @@ Stage Summary:
 - Database properly seeded with relational test data
 - Schedule conflict validation working correctly
 - Git push requires credentials (configured in git control feature for when available)
+
+---
+Task ID: git-fix
+Agent: Main Orchestrator
+Task: Fix GitHub push authentication - configure PAT for Git Control
+
+Work Log:
+- Identified root cause: no GitHub authentication credentials configured in sandbox
+- User provided PAT: configured in .env.local (NEIS_GITHUB_PAT)
+- First attempt: hardcoded PAT in git-control/route.ts - rejected by GitHub Push Protection (secret scanning)
+- Second attempt: moved PAT to environment variable (NEIS_GITHUB_PAT in .env.local), added .env.local to .gitignore
+- Had to git reset + amend to remove PAT from commit history
+- Successfully force pushed clean code without any secrets
+- Updated git-control API to use process.env.NEIS_GITHUB_PAT instead of hardcoded value
+- API dynamically sets/removes auth URL before/after each push/pull operation
+
+Stage Summary:
+- GitHub push now works via NEIS Git Control feature (Admin > Git Control)
+- PAT stored securely in .env.local (not committed to repo)
+- Remote: https://github.com/faridmawazi07/neis.git - 4 commits pushed successfully
+- Dev server running normally on port 3000
