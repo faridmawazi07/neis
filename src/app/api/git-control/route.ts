@@ -219,6 +219,15 @@ let sandboxResetDetected = false;
 // ========== API HANDLER ==========
 
 export async function POST(req: NextRequest) {
+  // Blokir semua akses Git Control di production (deploy)
+  // Git Control hanya diperlukan di development (lokal sandbox)
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { error: 'Git Control tidak tersedia di versi yang sudah di-deploy. Kode dikelola melalui GitHub dan platform deploy (Vercel) secara otomatis.' },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await req.json();
     const { action } = body;

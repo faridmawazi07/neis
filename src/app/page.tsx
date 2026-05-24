@@ -15,6 +15,7 @@ import { ProfilePage } from '@/components/neis/profile-page';
 import { GitControlPage } from '@/components/neis/git-control';
 import { BackupRestorePage } from '@/components/neis/backup-restore';
 import { useToast } from '@/hooks/use-toast';
+import { GitBranch } from 'lucide-react';
 
 type AuthView = 'login' | 'register';
 
@@ -122,6 +123,19 @@ export default function HomePage() {
       case 'backup-restore':
         return <BackupRestorePage />;
       case 'git-control':
+        // Git Control tidak tersedia di production (deploy)
+        if (process.env.NODE_ENV === 'production') {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+              <GitBranch className="h-16 w-16 text-muted-foreground mb-4" />
+              <h2 className="text-2xl font-bold mb-2">Git Control Tidak Tersedia</h2>
+              <p className="text-muted-foreground max-w-md">
+                Fitur Git Control hanya tersedia di lingkungan pengembangan (lokal). 
+                Di versi yang sudah di-deploy, kode dikelola melalui GitHub dan Vercel secara otomatis.
+              </p>
+            </div>
+          );
+        }
         return <GitControlPage />;
       case 'profile':
         return <ProfilePage />;
