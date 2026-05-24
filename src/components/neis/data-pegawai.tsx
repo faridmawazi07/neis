@@ -1,0 +1,247 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { useAuthStore } from '@/stores/auth-store';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Search, UserCheck, Trash2, Eye } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { ImageModal } from './image-modal';
+
+interface DataPegawaiProps {
+  initialTab?: string;
+}
+
+export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
+  const { user } = useAuthStore();
+  const { toast } = useToast();
+  const role = user?.role || 'admin';
+
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const [dataList, setDataList] = useState<any[]>([]);
+  const [pendingList, setPendingList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  // Approve modal
+  const [approveModal, setApproveModal] = useState<any>(null);
+  const [approveRole, setApproveRole] = useState('');
+
+  // Delete
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Image modal
+  const [imageSrc, setImageSrc] = useState('');
+  const [imageOpen, setImageOpen] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [approvedRes, pendingRes] = await Promise.all([
+        fetch(`/api/users?status=approved&search=${encodeURIComponent(search)}`, { credentials: 'include' }),
+        fetch(`/api/users?status=pending&search=${encodeURIComponent(search)}`, { credentials: 'include' }),
+      ]);
+      if (approvedRes.ok) setDataList((await approvedRes.json()).data || []);
+      if (pendingRes.ok) setPendingList((await pendingRes.json()).data || []);
+    } finally { setLoading(false); }
+  }, [search]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
+
+  const handleApprove = async () => {
+    if (!approveModal || !approveRole) {
+      toast({ title: 'Error', description: 'Pilih role terlebih dahulu', variant: 'destructive' });
+      return;
+    }
+    try {
+      const res = await fetch('/api/users/approve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: approveModal.id, role: approveRole }),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
+      toast({ title: 'Berhasil', description: 'Pengguna berhasil disetujui' });
+      setApproveModal(null); setApproveRole('');
+      fetchData();
+    } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      const res = await fetch('/api/users', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: deleteId }), credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
+      toast({ title: 'Berhasil', description: 'Pengguna berhasil dihapus' });
+      setDeleteId(null); fetchData();
+    } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
+  };
+
+  return (
+    <div>
+      <h1 className="text-xl font-bold mb-4">Data Pegawai</h1>
+
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Cari nama atau NIP..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="data">Data Pegawai</TabsTrigger>
+          <TabsTrigger value="approve">
+            Approve {pendingList.length > 0 && `(${pendingList.length})`}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="data">
+          <Card><CardContent className="p-0">
+            {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
+            dataList.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p> :
+            <div className="overflow-x-auto"><Table>
+              <TableHeader><TableRow>
+                <TableHead>Foto</TableHead><TableHead>NIP</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>JK</TableHead>
+                {role === 'admin' && <TableHead>Aksi</TableHead>}
+              </TableRow></TableHeader>
+              <TableBody>{dataList.map((d: any) => (
+                <TableRow key={d.id}>
+                  <TableCell>
+                    {d.foto_profile ? (
+                      <button onClick={() => { setImageSrc(d.foto_profile); setImageOpen(true); }}>
+                        <img src={d.foto_profile} alt={d.nama} className="w-9 h-9 rounded-full object-cover" />
+                      </button>
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-ocean/20 flex items-center justify-center text-xs font-bold text-ocean">
+                        {d.nama?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs">{d.nip}</TableCell>
+                  <TableCell>{d.nama}</TableCell>
+                  <TableCell className="capitalize">{d.role}</TableCell>
+                  <TableCell>{d.jenis_kelamin || '-'}</TableCell>
+                  {role === 'admin' && (
+                    <TableCell>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}</TableBody>
+            </Table></div>}
+          </CardContent></Card>
+        </TabsContent>
+
+        <TabsContent value="approve">
+          <Card><CardContent className="p-0">
+            {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
+            pendingList.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Tidak ada pengguna yang menunggu persetujuan</p> :
+            <div className="overflow-x-auto"><Table>
+              <TableHeader><TableRow>
+                <TableHead>Foto</TableHead><TableHead>NIP</TableHead><TableHead>Nama</TableHead><TableHead>Aksi</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>{pendingList.map((d: any) => (
+                <TableRow key={d.id}>
+                  <TableCell>
+                    {d.foto_profile ? (
+                      <button onClick={() => { setImageSrc(d.foto_profile); setImageOpen(true); }}>
+                        <img src={d.foto_profile} alt={d.nama} className="w-9 h-9 rounded-full object-cover" />
+                      </button>
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-xs">
+                        {d.nama?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs">{d.nip}</TableCell>
+                  <TableCell>{d.nama}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={() => { setApproveModal(d); setApproveRole('guru'); }}>
+                        <UserCheck className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table></div>}
+          </CardContent></Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Approve Modal */}
+      <Dialog open={!!approveModal} onOpenChange={() => setApproveModal(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Setujui Pengguna</DialogTitle></DialogHeader>
+          {approveModal && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                {approveModal.foto_profile ? (
+                  <img src={approveModal.foto_profile} alt={approveModal.nama} className="w-12 h-12 rounded-full object-cover" />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">?</div>
+                )}
+                <div>
+                  <p className="font-medium">{approveModal.nama}</p>
+                  <p className="text-xs text-muted-foreground">{approveModal.nip}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Pilih Role</label>
+                <Select value={approveRole} onValueChange={setApproveRole}>
+                  <SelectTrigger><SelectValue placeholder="Pilih role" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="guru">Guru</SelectItem>
+                    <SelectItem value="pegawai">Pegawai</SelectItem>
+                    <SelectItem value="pimpinan">Pimpinan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApproveModal(null)}>Batal</Button>
+            <Button onClick={handleApprove} className="bg-ocean hover:bg-ocean-dark text-white">Setujui</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle><AlertDialogDescription>Pengguna yang dihapus tidak dapat dikembalikan.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Hapus</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <ImageModal open={imageOpen} onClose={() => setImageOpen(false)} src={imageSrc} />
+    </div>
+  );
+}
