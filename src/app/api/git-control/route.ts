@@ -231,13 +231,43 @@ async function pushToGitHub(commitMessage: string = 'chore: auto backup by NEIS'
   }
 }
 
-// ========== AUTO-PUSH STATE ==========
+// ========== AUTO-PUSH STATE (with file persistence) ==========
 
-let autoPushEnabled = true;
-let lastAutoPushTime: string | null = null;
-let lastAutoPushStatus: 'success' | 'failed' | 'no_changes' | 'sandbox_reset_blocked' | null = null;
-let autoPushIntervalMinutes = 5;
-let sandboxResetDetected = false;
+const AUTO_PUSH_STATE_FILE = '/home/z/my-project/.neis-auto-push-state.json';
+
+interface AutoPushState {
+  enabled: boolean;
+  intervalMinutes: number;
+  lastAutoPushTime: string | null;
+  lastAutoPushStatus: 'success' | 'failed' | 'no_changes' | 'sandbox_reset_blocked' | null;
+  sandboxResetDetected: boolean;
+}
+
+function loadAutoPushState(): AutoPushState {
+  const defaults: AutoPushState = {
+    enabled: true,
+    intervalMinutes: 5,
+    lastAutoPushTime: null,
+    lastAutoPushStatus: null,
+    sandboxResetDetected: false,
+  };
+  try {
+    if (existsSync(AUTO_PUSH_STATE_FILE)) {
+      const content = readFileSync(AUTO_PUSH_STATE_FILE, 'utf-8');
+      return { ...defaults, ...JSON.parse(content) };
+    }
+  } catch {}
+  return defaults;
+}
+
+function saveAutoPushState(state: AutoPushState): void {
+  try {
+    writeFileSync(AUTO_PUSH_STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+  } catch {}
+}
+
+// Load state from file on startup
+let autoPushState = loadAutoPushState();
 
 // ========== API HANDLER ==========
 
@@ -264,12 +294,12 @@ export async function POST(req: NextRequest) {
       if (!isAutoPushInternal) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      if (!autoPushEnabled) {
+      if (!autoPushState.enabled) {
         return NextResponse.json({ message: 'Auto-push dinonaktifkan', skipped: true });
       }
 
       // If sandbox reset was already detected, don't try again
-      if (sandboxResetDetected) {
+      if (autoPushState.sandboxResetDetected) {
         return NextResponse.json({
           message: '🚨 Auto-push diblokir: Sandbox reset terdeteksi! Manual admin action diperlukan.',
           skipped: true,
@@ -294,11 +324,12 @@ export async function POST(req: NextRequest) {
         ? `chore: auto backup - ${changedFiles} file diubah (${timestamp})`
         : `chore: auto backup ${timestamp}`;
       const result = await pushToGitHub(commitMsg);
-      lastAutoPushTime = timestamp;
+      autoPushState.lastAutoPushTime = timestamp;
 
       if (result.sandboxResetDetected) {
-        sandboxResetDetected = true;
-        lastAutoPushStatus = 'sandbox_reset_blocked';
+        autoPushState.sandboxResetDetected = true;
+        autoPushState.lastAutoPushStatus = 'sandbox_reset_blocked';
+        saveAutoPushState(autoPushState);
         return NextResponse.json({
           message: result.message,
           hadChanges: false,
@@ -306,18 +337,19 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      lastAutoPushStatus = result.success ? (result.hadChanges ? 'success' : 'no_changes') : 'failed';
+      autoPushState.lastAutoPushStatus = result.success ? (result.hadChanges ? 'success' : 'no_changes') : 'failed';
+      saveAutoPushState(autoPushState);
       return NextResponse.json({ message: result.message, hadChanges: result.hadChanges });
     }
 
     // Allow internal auto-push service to read status without JWT
     if (action === 'auto-push-status' && isAutoPushInternal) {
       return NextResponse.json({
-        enabled: autoPushEnabled,
-        intervalMinutes: autoPushIntervalMinutes,
-        lastAutoPushTime,
-        lastAutoPushStatus,
-        sandboxResetDetected,
+        enabled: autoPushState.enabled,
+        intervalMinutes: autoPushState.intervalMinutes,
+        lastAutoPushTime: autoPushState.lastAutoPushTime,
+        lastAutoPushStatus: autoPushState.lastAutoPushStatus,
+        sandboxResetDetected: autoPushState.sandboxResetDetected,
       });
     }
 
@@ -362,7 +394,8 @@ export async function POST(req: NextRequest) {
       const result = await pushToGitHub('chore: force backup by Admin (override)', true);
       if (result.success) {
         // Reset sandbox reset flag since admin chose to force push
-        sandboxResetDetected = false;
+        autoPushState.sandboxResetDetected = false;
+        saveAutoPushState(autoPushState);
       }
       if (!result.success) {
         return NextResponse.json({ error: result.message }, { status: 500 });
@@ -387,7 +420,8 @@ export async function POST(req: NextRequest) {
           // After pull, save the new commit and reset sandbox flag
           const newCommit = await getCurrentLocalCommit();
           saveLastPushedCommit(newCommit);
-          sandboxResetDetected = false;
+          autoPushState.sandboxResetDetected = false;
+          saveAutoPushState(autoPushState);
         } finally {
           await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
         }
@@ -401,28 +435,31 @@ export async function POST(req: NextRequest) {
       }
     } else if (action === 'auto-push-status') {
       return NextResponse.json({
-        enabled: autoPushEnabled,
-        intervalMinutes: autoPushIntervalMinutes,
-        lastAutoPushTime,
-        lastAutoPushStatus,
-        sandboxResetDetected,
+        enabled: autoPushState.enabled,
+        intervalMinutes: autoPushState.intervalMinutes,
+        lastAutoPushTime: autoPushState.lastAutoPushTime,
+        lastAutoPushStatus: autoPushState.lastAutoPushStatus,
+        sandboxResetDetected: autoPushState.sandboxResetDetected,
       });
     } else if (action === 'auto-push-toggle') {
-      autoPushEnabled = body.enabled ?? !autoPushEnabled;
+      autoPushState.enabled = body.enabled ?? !autoPushState.enabled;
+      saveAutoPushState(autoPushState);
       return NextResponse.json({
-        enabled: autoPushEnabled,
-        message: autoPushEnabled ? 'Auto-push diaktifkan' : 'Auto-push dinonaktifkan',
+        enabled: autoPushState.enabled,
+        message: autoPushState.enabled ? 'Auto-push diaktifkan' : 'Auto-push dinonaktifkan',
       });
     } else if (action === 'auto-push-interval') {
       const newInterval = body.intervalMinutes;
       if (newInterval && newInterval >= 1 && newInterval <= 60) {
-        autoPushIntervalMinutes = newInterval;
-        return NextResponse.json({ intervalMinutes: autoPushIntervalMinutes, message: `Interval auto-push diubah ke ${autoPushIntervalMinutes} menit` });
+        autoPushState.intervalMinutes = newInterval;
+        saveAutoPushState(autoPushState);
+        return NextResponse.json({ intervalMinutes: autoPushState.intervalMinutes, message: `Interval auto-push diubah ke ${autoPushState.intervalMinutes} menit` });
       }
       return NextResponse.json({ error: 'Interval harus antara 1-60 menit' }, { status: 400 });
     } else if (action === 'dismiss-sandbox-reset') {
       // Admin acknowledges the reset and wants to start fresh
-      sandboxResetDetected = false;
+      autoPushState.sandboxResetDetected = false;
+      saveAutoPushState(autoPushState);
       const currentCommit = await getCurrentLocalCommit();
       saveLastPushedCommit(currentCommit);
       return NextResponse.json({ message: 'Peringatan sandbox reset diabaikan. Auto-push akan berjalan normal lagi.' });
@@ -452,7 +489,8 @@ export async function POST(req: NextRequest) {
         // Step 4: Update commit tracking
         const newCommit = await getCurrentLocalCommit();
         saveLastPushedCommit(newCommit);
-        sandboxResetDetected = false;
+        autoPushState.sandboxResetDetected = false;
+        saveAutoPushState(autoPushState);
 
         return NextResponse.json({
           message: '✅ Pemulihan berhasil! Kode dan database telah dipulihkan dari GitHub. Halaman akan dimuat ulang.',
