@@ -342,7 +342,7 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Edit Data Pegawai</DialogTitle></DialogHeader>
           {editModal && (
-            <div className="space-y-4">
+            <form className="space-y-4" autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleEditSubmit(); }}>
               {/* Photo */}
               <div className="space-y-2">
                 <Label>Foto Profile</Label>
@@ -395,23 +395,25 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
 
               {/* NIP */}
               <div className="space-y-2">
-                <Label htmlFor="edit-nip">NIP</Label>
+                <Label htmlFor="pegawai-nip">NIP</Label>
                 <Input
-                  id="edit-nip"
+                  id="pegawai-nip"
                   value={editForm.nip}
                   onChange={(e) => setEditForm({ ...editForm, nip: e.target.value })}
                   placeholder="Masukkan NIP"
+                  autoComplete="new-password"
                 />
               </div>
 
               {/* Nama */}
               <div className="space-y-2">
-                <Label htmlFor="edit-nama">Nama</Label>
+                <Label htmlFor="pegawai-nama">Nama</Label>
                 <Input
-                  id="edit-nama"
+                  id="pegawai-nama"
                   value={editForm.nama}
                   onChange={(e) => setEditForm({ ...editForm, nama: e.target.value })}
                   placeholder="Masukkan nama"
+                  autoComplete="new-password"
                 />
               </div>
 
@@ -442,19 +444,20 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
 
               {/* Tanggal Lahir */}
               <div className="space-y-2">
-                <Label htmlFor="edit-tgl">Tanggal Lahir</Label>
+                <Label htmlFor="pegawai-tgl-lahir">Tanggal Lahir</Label>
                 <Input
-                  id="edit-tgl"
+                  id="pegawai-tgl-lahir"
                   type="date"
                   value={editForm.tanggal_lahir}
                   onChange={(e) => setEditForm({ ...editForm, tanggal_lahir: e.target.value })}
+                  autoComplete="new-password"
                 />
               </div>
-            </div>
+            </form>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditModal(null)}>Batal</Button>
-            <Button onClick={handleEditSubmit} disabled={editLoading} className="bg-ocean hover:bg-ocean-dark text-white">
+            <Button type="button" onClick={handleEditSubmit} disabled={editLoading} className="bg-ocean hover:bg-ocean-dark text-white">
               {editLoading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : 'Simpan'}
             </Button>
           </DialogFooter>
