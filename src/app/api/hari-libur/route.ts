@@ -120,7 +120,40 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden - Hanya admin yang dapat menghapus hari libur' }, { status: 403 });
     }
 
-    const { tanggal } = await req.json();
+    const body = await req.json();
+    const { tanggal, tanggals, action } = body;
+
+    // Bulk delete
+    if (action === 'bulk-delete' && Array.isArray(tanggals) && tanggals.length > 0) {
+      const results = { success: 0, notFound: 0, errors: [] as string[] };
+
+      for (const tgl of tanggals) {
+        try {
+          const existing = await turso.execute({
+            sql: 'SELECT tanggal FROM hari_libur WHERE tanggal = ?',
+            args: [tgl],
+          });
+          if (existing.rows.length === 0) {
+            results.notFound++;
+            continue;
+          }
+          await turso.execute({
+            sql: 'DELETE FROM hari_libur WHERE tanggal = ?',
+            args: [tgl],
+          });
+          results.success++;
+        } catch {
+          results.errors.push(tgl);
+        }
+      }
+
+      return NextResponse.json({
+        message: `${results.success} hari libur berhasil dihapus`,
+        results,
+      });
+    }
+
+    // Single delete
     if (!tanggal) {
       return NextResponse.json({ error: 'Tanggal wajib diisi' }, { status: 400 });
     }

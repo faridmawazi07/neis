@@ -557,6 +557,9 @@ export function HariLiburMaster() {
   const [formTanggal, setFormTanggal] = useState<Date>();
   const [formKeterangan, setFormKeterangan] = useState('');
   const [deleteTanggal, setDeleteTanggal] = useState<string | null>(null);
+  const [selectedTanggals, setSelectedTanggals] = useState<string[]>([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const pagination = usePagination(data.length);
 
   const fetchData = useCallback(async () => {
@@ -598,15 +601,58 @@ export function HariLiburMaster() {
       const data = await res.json();
       if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
       toast({ title: 'Berhasil', description: 'Hari libur berhasil dihapus' });
-      setDeleteTanggal(null); fetchData();
+      setDeleteTanggal(null); setSelectedTanggals(prev => prev.filter(t => t !== deleteTanggal)); fetchData();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTanggals.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch('/api/hari-libur', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bulk-delete', tanggals: selectedTanggals }),
+        credentials: 'include',
+      });
+      const result = await res.json();
+      if (!res.ok) { toast({ title: 'Gagal', description: result.error, variant: 'destructive' }); return; }
+      const { results } = result;
+      let msg = `${results.success} hari libur berhasil dihapus`;
+      if (results.notFound > 0) msg += `, ${results.notFound} tidak ditemukan`;
+      if (results.errors.length > 0) msg += `, ${results.errors.length} gagal`;
+      toast({ title: 'Berhasil', description: msg });
+      setSelectedTanggals([]); setBulkDeleteOpen(false); fetchData();
+    } catch {
+      toast({ title: 'Error', description: 'Terjadi kesalahan saat menghapus', variant: 'destructive' });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const toggleSelect = (tanggal: string) => setSelectedTanggals(prev => prev.includes(tanggal) ? prev.filter(t => t !== tanggal) : [...prev, tanggal]);
+  const toggleAll = () => {
+    const pageTanggals = pagination.paginatedData(data).map((d: any) => d.tanggal);
+    const allPageSelected = pageTanggals.length > 0 && pageTanggals.every((t: string) => selectedTanggals.includes(t));
+    if (allPageSelected) {
+      setSelectedTanggals(prev => prev.filter(t => !pageTanggals.includes(t)));
+    } else {
+      setSelectedTanggals(prev => [...new Set([...prev, ...pageTanggals])]);
+    }
   };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">Hari Libur</h1>
-        <Button onClick={openAdd} size="sm" className="bg-ocean hover:bg-ocean-dark text-white"><Plus className="h-4 w-4 mr-1" /> Tambah</Button>
+        <div className="flex gap-2">
+          {selectedTanggals.length > 0 && (
+            <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
+              <Trash2 className="h-4 w-4 mr-1" /> Hapus ({selectedTanggals.length})
+            </Button>
+          )}
+          <Button onClick={openAdd} size="sm" className="bg-ocean hover:bg-ocean-dark text-white"><Plus className="h-4 w-4 mr-1" /> Tambah</Button>
+        </div>
       </div>
       <Card><CardContent className="p-0">
         {loading ? (
@@ -616,9 +662,13 @@ export function HariLiburMaster() {
         ) : (
           <>
             <div className="overflow-x-auto"><Table>
-              <TableHeader><TableRow><TableHead>Tanggal</TableHead><TableHead>Keterangan</TableHead><TableHead>Aksi</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow>
+                <TableHead className="w-10"><Checkbox checked={pagination.paginatedData(data).length > 0 && pagination.paginatedData(data).every((d: any) => selectedTanggals.includes(d.tanggal))} onCheckedChange={toggleAll} /></TableHead>
+                <TableHead>Tanggal</TableHead><TableHead>Keterangan</TableHead><TableHead>Aksi</TableHead>
+              </TableRow></TableHeader>
               <TableBody>{pagination.paginatedData(data).map((d: any) => (
                 <TableRow key={d.tanggal}>
+                  <TableCell><Checkbox checked={selectedTanggals.includes(d.tanggal)} onCheckedChange={() => toggleSelect(d.tanggal)} /></TableCell>
                   <TableCell>{d.tanggal}</TableCell>
                   <TableCell>{d.keterangan}</TableCell>
                   <TableCell><div className="flex gap-1">
@@ -667,6 +717,16 @@ export function HariLiburMaster() {
       <AlertDialog open={!!deleteTanggal} onOpenChange={() => setDeleteTanggal(null)}><AlertDialogContent>
         <AlertDialogHeader><AlertDialogTitle>Hapus Hari Libur?</AlertDialogTitle><AlertDialogDescription>Data yang dihapus tidak dapat dikembalikan.</AlertDialogDescription></AlertDialogHeader>
         <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Hapus</AlertDialogAction></AlertDialogFooter>
+      </AlertDialogContent></AlertDialog>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!bulkDeleting) setBulkDeleteOpen(open); }}><AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>Hapus {selectedTanggals.length} Hari Libur?</AlertDialogTitle><AlertDialogDescription>Semua hari libur yang dipilih akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan.</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={bulkDeleting}>Batal</AlertDialogCancel>
+          <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground" disabled={bulkDeleting}>
+            {bulkDeleting ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" /> Menghapus...</> : 'Hapus Semua'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
       </AlertDialogContent></AlertDialog>
     </div>
   );
