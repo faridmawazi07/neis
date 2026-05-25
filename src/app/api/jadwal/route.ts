@@ -121,7 +121,7 @@ export async function PUT(req: NextRequest) {
     if (!payload) return NextResponse.json({ error: 'Token tidak valid' }, { status: 401 });
 
     const body = await req.json();
-    const { id, guru_id, hari_id, kelas_id, mapel_id, jam_ke, jam_mulai, jam_selesai } = body;
+    const { id, guru_id, hari_id, kelas_id, mapel_id, jam_ke, jam_mulai, jam_selesai, force } = body;
 
     if (!id) return NextResponse.json({ error: 'ID jadwal wajib diisi' }, { status: 400 });
 
@@ -137,6 +137,39 @@ export async function PUT(req: NextRequest) {
     }
 
     const actualGuruId = payload.role === 'guru' ? payload.userId : guru_id;
+
+    // Check if this jadwal has kehadiran records
+    const kehadiranCount = await turso.execute({
+      sql: 'SELECT COUNT(*) as count FROM kehadiran_mengajar WHERE jadwal_id = ?',
+      args: [id],
+    });
+    const hasKehadiran = (kehadiranCount.rows[0]?.count as number) > 0;
+
+    if (hasKehadiran && !force) {
+      // Get the old jadwal to check which fields changed
+      const oldJadwal = await turso.execute({
+        sql: 'SELECT guru_id, hari_id, kelas_id, mapel_id, jam_ke, jam_mulai, jam_selesai FROM jadwal WHERE id = ?',
+        args: [id],
+      });
+      
+      if (oldJadwal.rows.length > 0) {
+        const old = oldJadwal.rows[0];
+        const criticalChanged = 
+          (guru_id && guru_id !== old.guru_id) ||
+          (kelas_id && kelas_id !== old.kelas_id) ||
+          (mapel_id && mapel_id !== old.mapel_id) ||
+          (hari_id && hari_id !== old.hari_id);
+        
+        if (criticalChanged) {
+          return NextResponse.json({ 
+            error: `Jadwal ini sudah memiliki ${kehadiranCount.rows[0].count} data kehadiran. Mengubah guru/kelas/mapel/hari akan membuat data kehadiran tidak konsisten. Hanya jam yang bisa diubah.`,
+            hasKehadiran: true,
+            kehadiranCount: kehadiranCount.rows[0].count,
+            code: 'JADWAL_HAS_KEHADIRAN'
+          }, { status: 409 });
+        }
+      }
+    }
 
     // VALIDASI BENTROK JADWAL for update (exclude current record)
     if (hari_id && kelas_id && jam_ke) {
@@ -194,7 +227,7 @@ export async function DELETE(req: NextRequest) {
     if (!payload) return NextResponse.json({ error: 'Token tidak valid' }, { status: 401 });
 
     const body = await req.json();
-    const { id, ids } = body;
+    const { id, ids, force } = body;
 
     // Support bulk delete (array of IDs) or single ID
     const deleteIds: string[] = ids || (id ? [id] : []);
@@ -212,6 +245,52 @@ export async function DELETE(req: NextRequest) {
       if (unauthorized || existing.rows.length !== deleteIds.length) {
         return NextResponse.json({ error: 'Anda tidak memiliki akses untuk menghapus salah satu jadwal ini' }, { status: 403 });
       }
+    }
+
+    // Check if any jadwal has kehadiran records
+    if (!force) {
+      const kehadiranCheck = await turso.execute({
+        sql: `SELECT jadwal_id, COUNT(*) as count FROM kehadiran_mengajar WHERE jadwal_id IN (${deleteIds.map(() => '?').join(', ')}) GROUP BY jadwal_id`,
+        args: deleteIds,
+      });
+
+      if (kehadiranCheck.rows.length > 0) {
+        const totalKehadiran = kehadiranCheck.rows.reduce((sum: number, r: any) => sum + (r.count as number), 0);
+        const affectedJadwal = kehadiranCheck.rows.length;
+        return NextResponse.json({ 
+          error: `${affectedJadwal} jadwal memiliki ${totalKehadiran} data kehadiran. Menghapus jadwal akan membuat data kehadiran kehilangan referensi. Hapus data kehadiran terlebih dahulu, atau gunakan hapus paksa.`,
+          hasKehadiran: true,
+          kehadiranCount: totalKehadiran,
+          affectedJadwal,
+          code: 'JADWAL_HAS_KEHADIRAN'
+        }, { status: 409 });
+      }
+    } else {
+      // Force delete: also delete associated kehadiran and their Cloudinary photos
+      const kehadiranWithPhotos = await turso.execute({
+        sql: `SELECT foto_mengajar FROM kehadiran_mengajar WHERE jadwal_id IN (${deleteIds.map(() => '?').join(', ')}) AND foto_mengajar IS NOT NULL`,
+        args: deleteIds,
+      });
+      
+      // Delete Cloudinary photos
+      const cloudinaryPhotos = kehadiranWithPhotos.rows
+        .map(r => r.foto_mengajar as string)
+        .filter((url): url is string => !!(url && url.includes('cloudinary.com')));
+      
+      if (cloudinaryPhotos.length > 0) {
+        try {
+          const { deleteFromCloudinary } = await import('@/lib/cloudinary');
+          await Promise.allSettled(cloudinaryPhotos.map(url => deleteFromCloudinary(url)));
+        } catch (e) {
+          console.error('Failed to delete some kehadiran photos from Cloudinary:', e);
+        }
+      }
+
+      // Delete kehadiran first (to avoid FK constraint violation)
+      await turso.execute({
+        sql: `DELETE FROM kehadiran_mengajar WHERE jadwal_id IN (${deleteIds.map(() => '?').join(', ')})`,
+        args: deleteIds,
+      });
     }
 
     // Delete all selected jadwal
