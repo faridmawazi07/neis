@@ -15,7 +15,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, UserCheck, Trash2, Pencil, Upload, X, Eye } from 'lucide-react';
+import { Search, UserCheck, Trash2, Pencil, Upload, X, Eye, Camera, Image as ImageIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ImageModal } from './image-modal';
 
@@ -52,15 +52,13 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
     nip: '',
     nama: '',
     role: '',
-    jenis_kelamin: '',
-    tanggal_lahir: '',
     password: '',
   });
   const [editPhoto, setEditPhoto] = useState<File | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string>('');
   const [editLoading, setEditLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [tglFocused, setTglFocused] = useState(false);
+  const fileGalleryRef = useRef<HTMLInputElement>(null);
+  const fileCameraRef = useRef<HTMLInputElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -126,13 +124,10 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
       nip: d.nip || '',
       nama: d.nama || '',
       role: d.role || '',
-      jenis_kelamin: d.jenis_kelamin || '',
-      tanggal_lahir: d.tanggal_lahir || '',
       password: '',
     });
     setEditPhoto(null);
     setEditPhotoPreview(d.foto_profile || '');
-    setTglFocused(false);
   };
 
   const handleEditPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -148,7 +143,8 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
   const removeEditPhoto = () => {
     setEditPhoto(null);
     setEditPhotoPreview('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (fileGalleryRef.current) fileGalleryRef.current.value = '';
+    if (fileCameraRef.current) fileCameraRef.current.value = '';
   };
 
   const handleEditSubmit = async () => {
@@ -164,8 +160,6 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
       formData.append('nip', editForm.nip.trim());
       formData.append('nama', editForm.nama.trim());
       formData.append('role', editForm.role);
-      formData.append('jenis_kelamin', editForm.jenis_kelamin);
-      formData.append('tanggal_lahir', editForm.tanggal_lahir);
       if (editForm.password.trim()) {
         formData.append('password', editForm.password.trim());
       }
@@ -354,11 +348,11 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
               <input type="text" className="hidden" tabIndex={-1} autoComplete="username" />
               <input type="password" className="hidden" tabIndex={-1} autoComplete="current-password" />
 
-              {/* Photo - compact */}
+              {/* Photo - compact with camera & gallery */}
               <div className="flex items-center gap-3">
-                <div className="relative group shrink-0">
+                <div className="shrink-0">
                   {editPhotoPreview ? (
-                    <button type="button" onClick={() => openImagePreview(editPhotoPreview, editForm.nama)} className="relative">
+                    <button type="button" onClick={() => openImagePreview(editPhotoPreview, editForm.nama)}>
                       <img src={editPhotoPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover hover:ring-2 hover:ring-ocean cursor-pointer" />
                     </button>
                   ) : (
@@ -367,14 +361,18 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleEditPhotoChange} className="hidden" />
-                  <Button type="button" variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => fileInputRef.current?.click()}>
-                    <Upload className="h-3 w-3" /> Upload
+                <div className="flex items-center gap-1.5">
+                  <input ref={fileGalleryRef} type="file" accept="image/*" onChange={handleEditPhotoChange} className="hidden" />
+                  <input ref={fileCameraRef} type="file" accept="image/*" capture="environment" onChange={handleEditPhotoChange} className="hidden" />
+                  <Button type="button" variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => fileGalleryRef.current?.click()}>
+                    <ImageIcon className="h-3 w-3" /> Galeri
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => fileCameraRef.current?.click()}>
+                    <Camera className="h-3 w-3" /> Kamera
                   </Button>
                   {editPhotoPreview && (
-                    <Button type="button" variant="ghost" size="sm" className="gap-1 h-7 text-xs text-destructive" onClick={removeEditPhoto}>
-                      <X className="h-3 w-3" /> Hapus
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-destructive px-1.5" onClick={removeEditPhoto}>
+                      <X className="h-3.5 w-3.5" />
                     </Button>
                   )}
                 </div>
@@ -415,33 +413,6 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                     <SelectItem value="pimpinan">Pimpinan</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-
-              {/* Jenis Kelamin & Tanggal Lahir - side by side */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Jenis Kelamin</Label>
-                  <Select value={editForm.jenis_kelamin} onValueChange={(v) => setEditForm({ ...editForm, jenis_kelamin: v })}>
-                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Pilih" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="L">Laki-laki</SelectItem>
-                      <SelectItem value="P">Perempuan</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Tanggal Lahir</Label>
-                  <Input
-                    type={tglFocused ? 'date' : 'text'}
-                    value={tglFocused ? editForm.tanggal_lahir : (editForm.tanggal_lahir || 'Pilih tanggal')}
-                    onChange={(e) => setEditForm({ ...editForm, tanggal_lahir: e.target.value })}
-                    onFocus={() => setTglFocused(true)}
-                    onBlur={() => setTglFocused(false)}
-                    className={`h-8 text-sm ${!tglFocused && !editForm.tanggal_lahir ? 'text-muted-foreground' : ''}`}
-                    readOnly={false}
-                    autoComplete="off"
-                  />
-                </div>
               </div>
 
               {/* Password */}
