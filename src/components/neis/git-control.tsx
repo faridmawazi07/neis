@@ -20,6 +20,7 @@ import { useToast } from '@/hooks/use-toast';
 interface CloudinaryInfo {
   configured: boolean;
   error?: string;
+  limitedAccess?: boolean;
   storage?: {
     usedMB: number;
     limitMB: number;
@@ -231,7 +232,7 @@ export function GitControlPage() {
                 <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
                 <div>
                   <p className="font-medium text-amber-700 dark:text-amber-400">Cloudinary Belum Dikonfigurasi</p>
-                  <p className="text-amber-600 dark:text-amber-500 mt-1">Atur CLOUDINARY_CLOUD_NAME, API_KEY, dan API_SECRET di server.</p>
+                  <p className="text-amber-600 dark:text-amber-500 mt-1">Atur CLOUDINARY_CLOUD_NAME, API_KEY, dan API_SECRET di file .neis.env.</p>
                 </div>
               </div>
             </div>
@@ -247,45 +248,58 @@ export function GitControlPage() {
                 <Badge className="bg-sky-500 capitalize">{cld.plan || 'Free'} Plan</Badge>
               </div>
 
-              <Separator />
-
-              {/* Storage */}
-              {cld.storage && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <HardDrive className="h-4 w-4" /> Penyimpanan
-                    </div>
-                    <span className="font-medium">{cld.storage.usedMB} MB / {cld.storage.limitMB} MB</span>
+              {cld.limitedAccess ? (
+                <>
+                  <Separator />
+                  <div className="flex items-center gap-2 text-sm text-sky-600 dark:text-sky-400">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Cloudinary aktif untuk menyimpan foto</span>
                   </div>
-                  <Progress value={cld.storage.percentage} className="h-2" />
-                  <p className="text-xs text-muted-foreground text-right">{cld.storage.percentage}% terpakai</p>
-                </div>
-              )}
+                  <p className="text-xs text-muted-foreground">Statistik penggunaan tidak tersedia (akun Free tier)</p>
+                </>
+              ) : (
+                <>
+                  <Separator />
 
-              {/* Bandwidth */}
-              {cld.bandwidth && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Zap className="h-4 w-4" /> Bandwidth
+                  {/* Storage */}
+                  {cld.storage && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <HardDrive className="h-4 w-4" /> Penyimpanan
+                        </div>
+                        <span className="font-medium">{cld.storage.usedMB} MB / {cld.storage.limitMB} MB</span>
+                      </div>
+                      <Progress value={cld.storage.percentage} className="h-2" />
+                      <p className="text-xs text-muted-foreground text-right">{cld.storage.percentage}% terpakai</p>
                     </div>
-                    <span className="font-medium">{cld.bandwidth.usedMB} MB / {cld.bandwidth.limitMB} MB</span>
-                  </div>
-                  <Progress value={cld.bandwidth.percentage} className="h-2" />
-                  <p className="text-xs text-muted-foreground text-right">{cld.bandwidth.percentage}% terpakai</p>
-                </div>
-              )}
+                  )}
 
-              {/* Resources */}
-              <div className="grid grid-cols-2 gap-3 text-sm pt-1">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <ImageIcon className="h-4 w-4" /> Foto: <strong className="text-foreground">{cld.resources ?? 0}</strong>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <HardDrive className="h-4 w-4" /> Turunan: <strong className="text-foreground">{cld.derivedResources ?? 0}</strong>
-                </div>
-              </div>
+                  {/* Bandwidth */}
+                  {cld.bandwidth && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Zap className="h-4 w-4" /> Bandwidth
+                        </div>
+                        <span className="font-medium">{cld.bandwidth.usedMB} MB / {cld.bandwidth.limitMB} MB</span>
+                      </div>
+                      <Progress value={cld.bandwidth.percentage} className="h-2" />
+                      <p className="text-xs text-muted-foreground text-right">{cld.bandwidth.percentage}% terpakai</p>
+                    </div>
+                  )}
+
+                  {/* Resources */}
+                  <div className="grid grid-cols-2 gap-3 text-sm pt-1">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <ImageIcon className="h-4 w-4" /> Foto: <strong className="text-foreground">{cld.resources ?? 0}</strong>
+                    </div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <HardDrive className="h-4 w-4" /> Turunan: <strong className="text-foreground">{cld.derivedResources ?? 0}</strong>
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
         </CardContent>

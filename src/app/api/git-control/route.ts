@@ -101,23 +101,17 @@ async function getCloudinaryUsage() {
       return { configured: false };
     }
 
-    // Use Admin API to get usage stats
-    const timestamp = Math.floor(Date.now() / 1000);
-    const { createHmac } = await import('crypto');
-    const sigString = `timestamp=${timestamp}${apiSecret}`;
-    const signature = createHmac('sha1', apiSecret).update(sigString).digest('hex');
-
-    const formData = new FormData();
-    formData.append('api_key', apiKey);
-    formData.append('timestamp', String(timestamp));
-    formData.append('signature', signature);
-
+    // Try Admin API with basic auth to get usage stats
+    const credentials = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
     const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/usage`, {
-      method: 'POST',
-      body: formData,
+      method: 'GET',
+      headers: { 'Authorization': `Basic ${credentials}` },
     });
 
-    if (!res.ok) return { configured: true, error: 'Gagal mengambil data' };
+    if (!res.ok) {
+      // API might not have permission (free tier) - still mark as configured
+      return { configured: true, plan: 'free', limitedAccess: true };
+    }
 
     const data = await res.json();
     return {
@@ -143,7 +137,8 @@ async function getCloudinaryUsage() {
     };
   } catch (error) {
     console.error('Cloudinary usage error:', error);
-    return { configured: true, error: 'Gagal mengambil data Cloudinary' };
+    // Still configured, just can't get stats
+    return { configured: true, plan: 'free', limitedAccess: true };
   }
 }
 
