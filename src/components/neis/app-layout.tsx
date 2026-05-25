@@ -25,6 +25,7 @@ import {
   Clock,
   AlertCircle,
   CalendarDays,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -36,6 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ImageModal } from './image-modal';
 
 export type PageName =
   | 'dashboard'
@@ -106,6 +108,9 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
   const { theme, setTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
+
+  // Image preview modal
+  const [imageOpen, setImageOpen] = useState(false);
 
   const role = user?.role || 'guru';
   const items = menuItems[role as keyof typeof menuItems] || menuItems.guru;
@@ -263,6 +268,11 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                {user?.foto_profile && (
+                  <DropdownMenuItem onClick={() => setImageOpen(true)}>
+                    <Eye className="h-4 w-4 mr-2" /> Lihat Foto
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => handleNavigate('profile')}>
                   <User className="h-4 w-4 mr-2" /> Profile
                 </DropdownMenuItem>
@@ -279,6 +289,9 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
           {children}
         </main>
       </div>
+
+      {/* Image Preview Modal */}
+      <ImageModal open={imageOpen} onClose={() => setImageOpen(false)} src={user?.foto_profile || ''} alt={user?.nama || 'Foto'} />
     </div>
   );
 }
