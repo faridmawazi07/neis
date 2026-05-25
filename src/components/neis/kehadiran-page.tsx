@@ -153,7 +153,7 @@ export function KehadiranPage() {
     }
     autoTable(doc, {
       startY: 28,
-      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Status']],
+      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']],
       body: data.map((d) => [
         d.tanggal,
         d.guru_nama,
@@ -165,6 +165,7 @@ export function KehadiranPage() {
         d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa),
         d.materi_pembelajaran || '-',
         d.jam_ke,
+        d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-',
         d.nama_status,
       ]),
     });
@@ -173,9 +174,9 @@ export function KehadiranPage() {
 
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
-    const wsData = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Status']];
+    const wsData = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']];
     data.forEach((d) => {
-      wsData.push([d.tanggal, d.guru_nama, d.nama_kelas, d.nama_mapel, d.jumlah_hadir, d.jumlah_izin_sakit, d.jumlah_alfa, d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa), d.materi_pembelajaran || '-', d.jam_ke, d.nama_status]);
+      wsData.push([d.tanggal, d.guru_nama, d.nama_kelas, d.nama_mapel, d.jumlah_hadir, d.jumlah_izin_sakit, d.jumlah_alfa, d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa), d.materi_pembelajaran || '-', d.jam_ke, d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-', d.nama_status]);
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -292,6 +293,7 @@ export function KehadiranPage() {
                     <TableHead className="text-center">Jumlah</TableHead>
                     <TableHead>Materi</TableHead>
                     <TableHead>Jam Ke</TableHead>
+                    <TableHead>Waktu</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Foto</TableHead>
                     {(canEdit || canDelete) && <TableHead>Aksi</TableHead>}
@@ -337,6 +339,7 @@ export function KehadiranPage() {
                         )}
                       </TableCell>
                       <TableCell>{d.jam_ke}</TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-'}</TableCell>
                       <TableCell>{d.nama_status}</TableCell>
                       <TableCell>
                         {d.foto_mengajar && (
