@@ -310,6 +310,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: result.message, hadChanges: result.hadChanges });
     }
 
+    // Allow internal auto-push service to read status without JWT
+    if (action === 'auto-push-status' && isAutoPushInternal) {
+      return NextResponse.json({
+        enabled: autoPushEnabled,
+        intervalMinutes: autoPushIntervalMinutes,
+        lastAutoPushTime,
+        lastAutoPushStatus,
+        sandboxResetDetected,
+      });
+    }
+
     // All other actions require admin JWT auth
     const token = req.cookies.get('neis-token')?.value || req.headers.get('Authorization')?.replace('Bearer ', '');
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
