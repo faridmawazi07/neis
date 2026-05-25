@@ -244,7 +244,37 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Anda tidak memiliki akses' }, { status: 403 });
     }
 
-    const { id } = await req.json();
+    const body = await req.json();
+    const { id, ids } = body;
+
+    // Bulk delete (admin only)
+    if (ids && Array.isArray(ids) && ids.length > 0) {
+      if (payload.role !== 'admin') {
+        return NextResponse.json({ error: 'Hanya admin yang dapat menghapus beberapa kehadiran sekaligus' }, { status: 403 });
+      }
+
+      // Validate all IDs exist
+      const placeholders = ids.map(() => '?').join(',');
+      const existing = await turso.execute({
+        sql: `SELECT id FROM kehadiran_mengajar WHERE id IN (${placeholders})`,
+        args: ids,
+      });
+      if (existing.rows.length !== ids.length) {
+        return NextResponse.json({ error: 'Beberapa data kehadiran tidak ditemukan' }, { status: 404 });
+      }
+
+      await turso.execute({
+        sql: `DELETE FROM kehadiran_mengajar WHERE id IN (${placeholders})`,
+        args: ids,
+      });
+
+      return NextResponse.json({ message: `${ids.length} data kehadiran berhasil dihapus` });
+    }
+
+    // Single delete
+    if (!id) {
+      return NextResponse.json({ error: 'ID kehadiran wajib diisi' }, { status: 400 });
+    }
 
     if (payload.role === 'guru') {
       const existing = await turso.execute({

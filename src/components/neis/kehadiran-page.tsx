@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Search, CalendarIcon, Plus, Download, FileSpreadsheet, Edit, Trash2, Eye, FileText, Filter } from 'lucide-react';
+import { Search, CalendarIcon, Plus, Download, FileSpreadsheet, Edit, Trash2, Eye, FileText, Filter, Trash } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -24,6 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -60,6 +61,10 @@ export function KehadiranPage() {
 
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Bulk delete (admin only)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   // Materi popup
   const [materiPopup, setMateriPopup] = useState<string>('');
@@ -138,6 +143,7 @@ export function KehadiranPage() {
 
   useEffect(() => {
     fetchData();
+    setSelectedIds(new Set());
   }, [fetchData]);
 
   useEffect(() => {
@@ -163,6 +169,46 @@ export function KehadiranPage() {
       fetchData();
     } catch {
       toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const res = await fetch('/api/kehadiran-mengajar', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+        credentials: 'include',
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Berhasil', description: result.message });
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+      fetchData();
+    } catch {
+      toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' });
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === data.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(data.map((d) => d.id)));
     }
   };
 
@@ -210,7 +256,18 @@ export function KehadiranPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <h1 className="text-xl font-bold">Kehadiran Mengajar</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold">Kehadiran Mengajar</h1>
+          {canDelete && selectedIds.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash className="h-4 w-4 mr-1" /> Hapus ({selectedIds.size})
+            </Button>
+          )}
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           {canAdd && !isHoliday && !outsideWorkHours && (
             <Button
@@ -306,6 +363,15 @@ export function KehadiranPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {canDelete && (
+                      <TableHead className="w-[40px]">
+                        <Checkbox
+                          checked={data.length > 0 && selectedIds.size === data.length}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label="Pilih semua"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Tanggal</TableHead>
                     <TableHead>Guru</TableHead>
                     <TableHead>Kelas</TableHead>
@@ -324,7 +390,16 @@ export function KehadiranPage() {
                 </TableHeader>
                 <TableBody>
                   {data.map((d) => (
-                    <TableRow key={d.id}>
+                    <TableRow key={d.id} className={selectedIds.has(d.id) ? 'bg-muted/50' : ''}>
+                      {canDelete && (
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(d.id)}
+                            onCheckedChange={() => toggleSelect(d.id)}
+                            aria-label={`Pilih kehadiran ${d.guru_nama}`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="text-xs">{d.tanggal}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -474,6 +549,24 @@ export function KehadiranPage() {
             <AlertDialogCancel>Batal</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
               Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus {selectedIds.size} Data Kehadiran?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedIds.size} data kehadiran yang dipilih akan dihapus secara permanen. Tindakan ini tidak dapat dikembalikan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground">
+              Hapus Semua
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
