@@ -58,7 +58,7 @@ export function KehadiranPage() {
   const canExport = role === 'admin' || role === 'pegawai' || role === 'pimpinan';
   const canAdd = isGuru;
   const canEdit = isGuru || role === 'admin';
-  const canDelete = isGuru || role === 'admin';
+  const canDelete = role === 'admin';
 
   const fetchData = useCallback(async () => {
     setLoading(true);
