@@ -60,7 +60,6 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
   const [editPhotoPreview, setEditPhotoPreview] = useState<string>('');
   const [editLoading, setEditLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [jkFocused, setJkFocused] = useState(false);
   const [tglFocused, setTglFocused] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -133,7 +132,6 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
     });
     setEditPhoto(null);
     setEditPhotoPreview(d.foto_profile || '');
-    setJkFocused(false);
     setTglFocused(false);
   };
 
@@ -449,20 +447,11 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                 </Select>
               </div>
 
-              {/* Jenis Kelamin - readonly trick to prevent browser autofill */}
+              {/* Jenis Kelamin */}
               <div className="space-y-2">
                 <Label>Jenis Kelamin</Label>
-                <Select 
-                  value={editForm.jenis_kelamin} 
-                  onValueChange={(v) => setEditForm({ ...editForm, jenis_kelamin: v })}
-                  open={jkFocused}
-                  onOpenChange={(open) => setJkFocused(open)}
-                >
-                  <SelectTrigger 
-                    onFocus={() => setJkFocused(true)}
-                    autoComplete="off" 
-                    data-lpignore="true"
-                  ><SelectValue placeholder="Pilih jenis kelamin" /></SelectTrigger>
+                <Select value={editForm.jenis_kelamin} onValueChange={(v) => setEditForm({ ...editForm, jenis_kelamin: v })}>
+                  <SelectTrigger><SelectValue placeholder="Pilih jenis kelamin" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="L">Laki-laki</SelectItem>
                     <SelectItem value="P">Perempuan</SelectItem>
