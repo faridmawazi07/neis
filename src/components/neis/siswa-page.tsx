@@ -14,8 +14,9 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Progress } from '@/components/ui/progress';
 
 export function SiswaPage() {
   const { toast } = useToast();
@@ -47,6 +48,15 @@ export function SiswaPage() {
 
   // Import/Export
   const importRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importTotal, setImportTotal] = useState(0);
+  const [importProcessed, setImportProcessed] = useState(0);
+  const [importSuccess, setImportSuccess] = useState(0);
+  const [importDuplicates, setImportDuplicates] = useState(0);
+  const [importFailed, setImportFailed] = useState(0);
+  const [importErrors, setImportErrors] = useState<any[]>([]);
+  const [importDone, setImportDone] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -192,6 +202,18 @@ export function SiswaPage() {
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Reset import state
+    setImporting(true);
+    setImportProgress(0);
+    setImportTotal(0);
+    setImportProcessed(0);
+    setImportSuccess(0);
+    setImportDuplicates(0);
+    setImportFailed(0);
+    setImportErrors([]);
+    setImportDone(false);
+
     try {
       const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
@@ -199,29 +221,88 @@ export function SiswaPage() {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-      // Skip header row
-      let added = 0;
+      // Parse rows, skip header
+      const items: any[] = [];
+      const skippedRows: any[] = [];
       for (let i = 1; i < rows.length; i++) {
         const [nis, nisn, nama, namaKelas, jk] = rows[i];
-        if (!nis || !nisn || !nama) continue;
+        if (!nis || !nisn || !nama) {
+          skippedRows.push({ row: i + 1, nis: String(nis || '-'), nama: String(nama || '-'), error: 'Data tidak lengkap (NIS/NISN/Nama kosong)' });
+          continue;
+        }
         const kelas = kelasList.find((k: any) => k.nama_kelas === String(namaKelas));
-        if (!kelas) continue;
-        try {
-          const res = await fetch('/api/siswa', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              nis: String(nis), nisn: String(nisn), nama: String(nama),
-              kelas_id: kelas.id, jenis_kelamin: jk || null,
-            }),
-            credentials: 'include',
-          });
-          if (res.ok) added++;
-        } catch {}
+        if (!kelas) {
+          skippedRows.push({ row: i + 1, nis: String(nis), nama: String(nama), error: `Kelas "${namaKelas}" tidak ditemukan` });
+          continue;
+        }
+        items.push({
+          nis: String(nis), nisn: String(nisn), nama: String(nama),
+          kelas_id: kelas.id, jenis_kelamin: jk || null,
+        });
       }
-      toast({ title: 'Import Selesai', description: `${added} siswa berhasil diimpor` });
+
+      setImportTotal(items.length);
+
+      if (items.length === 0) {
+        setImporting(false);
+        setImportDone(true);
+        setImportErrors(skippedRows);
+        setImportFailed(skippedRows.length);
+        toast({ title: 'Import Gagal', description: 'Tidak ada data valid untuk diimpor', variant: 'destructive' });
+        e.target.value = '';
+        return;
+      }
+
+      // Send in batches of 50 for better UX with progress updates
+      const BATCH_SIZE = 50;
+      let totalSuccess = 0;
+      let totalDuplicates = 0;
+      let totalFailed = skippedRows.length;
+      const allErrors = [...skippedRows];
+
+      for (let batch = 0; batch < items.length; batch += BATCH_SIZE) {
+        const batchItems = items.slice(batch, batch + BATCH_SIZE);
+        const res = await fetch('/api/siswa?action=bulk-import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: batchItems }),
+          credentials: 'include',
+        });
+
+        const processed = Math.min(batch + BATCH_SIZE, items.length);
+        setImportProcessed(processed);
+        setImportProgress(Math.round((processed / items.length) * 100));
+
+        if (res.ok) {
+          const result = await res.json();
+          totalSuccess += result.successCount || 0;
+          totalDuplicates += result.duplicateCount || 0;
+          totalFailed += result.failedCount || 0;
+          setImportSuccess(totalSuccess);
+          setImportDuplicates(totalDuplicates);
+          setImportFailed(totalFailed);
+
+          if (result.duplicates?.length > 0) {
+            allErrors.push(...result.duplicates.map((d: any) => ({ ...d, type: 'duplikat' })));
+          }
+          if (result.failed?.length > 0) {
+            allErrors.push(...result.failed.map((f: any) => ({ ...f, type: 'gagal' })));
+          }
+          setImportErrors(allErrors);
+        } else {
+          totalFailed += batchItems.length;
+          setImportFailed(totalFailed);
+          allErrors.push({ error: `Batch gagal diproses (baris ${batch + 1}-${processed})`, type: 'gagal' });
+          setImportErrors(allErrors);
+        }
+      }
+
+      setImportDone(true);
+      setImportProgress(100);
       fetchData();
     } catch {
       toast({ title: 'Error', description: 'Gagal membaca file Excel', variant: 'destructive' });
+      setImporting(false);
     }
     e.target.value = '';
   };
@@ -232,7 +313,14 @@ export function SiswaPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <h1 className="text-xl font-bold">Siswa</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold">Siswa</h1>
+          {!loading && data.length > 0 && (
+            <span className="text-sm bg-ocean/10 text-ocean px-2.5 py-0.5 rounded-full font-medium">
+              {data.length} siswa
+            </span>
+          )}
+        </div>
         <div className="flex gap-2 flex-wrap">
           {selectedIds.length > 0 && (
             <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
@@ -340,6 +428,90 @@ export function SiswaPage() {
         <AlertDialogHeader><AlertDialogTitle>Reset Data Siswa?</AlertDialogTitle><AlertDialogDescription>Semua data siswa akan dihapus permanen. Tindakan ini tidak dapat dibatalkan!</AlertDialogDescription></AlertDialogHeader>
         <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleReset} className="bg-destructive text-destructive-foreground">Reset Semua</AlertDialogAction></AlertDialogFooter>
       </AlertDialogContent></AlertDialog>
+
+      {/* Import Progress Dialog */}
+      <Dialog open={importing || importDone} onOpenChange={(open) => { if (!open && importDone) { setImportDone(false); setImporting(false); } }}>
+        <DialogContent className="max-w-md" onPointerDownOutside={(e) => { if (importing && !importDone) e.preventDefault(); }}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              {importDone ? 'Import Selesai' : 'Mengimpor Data Siswa...'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {!importDone ? (
+              <>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Memproses {importProcessed} dari {importTotal} data</span>
+                    <span>{importProgress}%</span>
+                  </div>
+                  <Progress value={importProgress} className="h-3" />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center p-2 bg-green-50 dark:bg-green-950 rounded-lg">
+                    <div className="text-lg font-bold text-green-600">{importSuccess}</div>
+                    <div className="text-xs text-green-600">Berhasil</div>
+                  </div>
+                  <div className="text-center p-2 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
+                    <div className="text-lg font-bold text-yellow-600">{importDuplicates}</div>
+                    <div className="text-xs text-yellow-600">Duplikat</div>
+                  </div>
+                  <div className="text-center p-2 bg-red-50 dark:bg-red-950 rounded-lg">
+                    <div className="text-lg font-bold text-red-600">{importFailed}</div>
+                    <div className="text-xs text-red-600">Gagal</div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center p-3 bg-green-50 dark:bg-green-950 rounded-lg">
+                    <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto mb-1" />
+                    <div className="text-xl font-bold text-green-600">{importSuccess}</div>
+                    <div className="text-xs text-green-600">Berhasil</div>
+                  </div>
+                  <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
+                    <AlertTriangle className="h-5 w-5 text-yellow-600 mx-auto mb-1" />
+                    <div className="text-xl font-bold text-yellow-600">{importDuplicates}</div>
+                    <div className="text-xs text-yellow-600">Duplikat</div>
+                  </div>
+                  <div className="text-center p-3 bg-red-50 dark:bg-red-950 rounded-lg">
+                    <XCircle className="h-5 w-5 text-red-600 mx-auto mb-1" />
+                    <div className="text-xl font-bold text-red-600">{importFailed}</div>
+                    <div className="text-xs text-red-600">Gagal</div>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm text-muted-foreground">Total: {importTotal} data diproses</span>
+                </div>
+                {importErrors.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Detail Error:</p>
+                    <div className="max-h-32 overflow-y-auto text-xs space-y-1 pr-1">
+                      {importErrors.slice(0, 20).map((err: any, idx: number) => (
+                        <div key={idx} className={`p-1.5 rounded ${err.type === 'duplikat' ? 'bg-yellow-50 dark:bg-yellow-950 text-yellow-700' : 'bg-red-50 dark:bg-red-950 text-red-700'}`}>
+                          {err.row ? `Baris ${err.row}: ` : ''}{err.nis ? `${err.nis} - ` : ''}{err.error}
+                        </div>
+                      ))}
+                      {importErrors.length > 20 && (
+                        <p className="text-muted-foreground">...dan {importErrors.length - 20} error lainnya</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          {importDone && (
+            <DialogFooter>
+              <Button onClick={() => { setImportDone(false); setImporting(false); }} className="bg-ocean hover:bg-ocean-dark text-white">
+                Tutup
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Kenaikan Kelas */}
       <Dialog open={kenaikanOpen} onOpenChange={setKenaikanOpen}><DialogContent className="max-w-lg">

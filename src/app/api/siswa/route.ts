@@ -80,6 +80,75 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Bulk import siswa
+    if (action === 'bulk-import') {
+      const { items } = await req.json();
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return NextResponse.json({ error: 'Data siswa wajib diisi (array)' }, { status: 400 });
+      }
+
+      const results = { success: [] as any[], failed: [] as any[], duplicates: [] as any[] };
+
+      for (const item of items) {
+        const { nis, nisn, nama, kelas_id, jenis_kelamin } = item;
+        if (!nis || !nisn || !nama || !kelas_id) {
+          results.failed.push({ nis: nis || '-', nisn: nisn || '-', nama: nama || '-', error: 'Data tidak lengkap' });
+          continue;
+        }
+
+        // Check if kelas exists
+        const kelasCheck = await turso.execute({
+          sql: 'SELECT id FROM kelas WHERE id = ?',
+          args: [kelas_id],
+        });
+        if (kelasCheck.rows.length === 0) {
+          results.failed.push({ nis: String(nis), nisn: String(nisn), nama: String(nama), error: 'Kelas tidak ditemukan' });
+          continue;
+        }
+
+        // Check NIS uniqueness
+        const nisCheck = await turso.execute({
+          sql: 'SELECT id FROM siswa WHERE nis = ?',
+          args: [String(nis)],
+        });
+        if (nisCheck.rows.length > 0) {
+          results.duplicates.push({ nis: String(nis), nisn: String(nisn), nama: String(nama), error: 'NIS sudah digunakan' });
+          continue;
+        }
+
+        // Check NISN uniqueness
+        const nisnCheck = await turso.execute({
+          sql: 'SELECT id FROM siswa WHERE nisn = ?',
+          args: [String(nisn)],
+        });
+        if (nisnCheck.rows.length > 0) {
+          results.duplicates.push({ nis: String(nis), nisn: String(nisn), nama: String(nama), error: 'NISN sudah digunakan' });
+          continue;
+        }
+
+        const id = uuidv4();
+        try {
+          await turso.execute({
+            sql: 'INSERT INTO siswa (id, nis, nisn, nama, kelas_id, jenis_kelamin) VALUES (?, ?, ?, ?, ?, ?)',
+            args: [id, String(nis), String(nisn), String(nama).trim(), kelas_id, jenis_kelamin || null],
+          });
+          results.success.push({ id, nis: String(nis), nisn: String(nisn), nama: String(nama).trim() });
+        } catch (err: any) {
+          results.failed.push({ nis: String(nis), nisn: String(nisn), nama: String(nama), error: err.message || 'Gagal menambah siswa' });
+        }
+      }
+
+      return NextResponse.json({
+        message: `Import selesai: ${results.success.length} berhasil, ${results.duplicates.length} duplikat, ${results.failed.length} gagal`,
+        total: items.length,
+        successCount: results.success.length,
+        duplicateCount: results.duplicates.length,
+        failedCount: results.failed.length,
+        duplicates: results.duplicates,
+        failed: results.failed,
+      }, { status: 201 });
+    }
+
     // Normal create siswa
     const { nis, nisn, nama, kelas_id, jenis_kelamin } = await req.json();
     if (!nis || !nisn || !nama || !kelas_id) {
