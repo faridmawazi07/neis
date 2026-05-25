@@ -44,9 +44,12 @@ export function JadwalPage() {
   const [formJamSelesai, setFormJamSelesai] = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
+  // Hari filter (guru)
+  const [filterHariId, setFilterHariId] = useState<string>('all');
+
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Bulk selection (admin only)
+  // Bulk selection (admin & guru)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
@@ -61,6 +64,7 @@ export function JadwalPage() {
     try {
       let url = '/api/jadwal?';
       if (isGuru) url += `guru_id=${user?.id}`;
+      if (filterHariId && filterHariId !== 'all') url += `&hari_id=${filterHariId}`;
       url += `&tanggal=${new Date().toISOString().split('T')[0]}`;
       const res = await fetch(url, { credentials: 'include' });
       if (res.ok) {
@@ -72,7 +76,7 @@ export function JadwalPage() {
     } finally {
       setLoading(false);
     }
-  }, [isGuru, user?.id]);
+  }, [isGuru, user?.id, filterHariId]);
 
   const fetchRefData = useCallback(async () => {
     try {
@@ -96,8 +100,11 @@ export function JadwalPage() {
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
     fetchRefData();
-  }, [fetchData, fetchRefData]);
+  }, [fetchRefData]);
 
   // Clear selection when data changes
   useEffect(() => {
@@ -259,7 +266,7 @@ export function JadwalPage() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">Jadwal</h1>
         <div className="flex items-center gap-2">
-          {isAdmin && selectedIds.size > 0 && (
+          {selectedIds.size > 0 && (
             <Button
               variant="destructive"
               size="sm"
@@ -276,6 +283,21 @@ export function JadwalPage() {
         </div>
       </div>
 
+      {/* Hari Filter */}
+      <div className="mb-4">
+        <Select value={filterHariId} onValueChange={setFilterHariId}>
+          <SelectTrigger className="w-full sm:w-48">
+            <SelectValue placeholder="Semua Hari" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua Hari</SelectItem>
+            {hariList.map((h) => (
+              <SelectItem key={h.id} value={h.id}>{h.nama_hari}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           {loading ? (
@@ -289,7 +311,7 @@ export function JadwalPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {isAdmin && (
+                    {(isAdmin || isGuru) && (
                       <TableHead className="w-10">
                         <Checkbox
                           checked={allSelected}
@@ -313,7 +335,7 @@ export function JadwalPage() {
                 <TableBody>
                   {data.map((d) => (
                     <TableRow key={d.id} className={selectedIds.has(d.id) ? 'bg-muted/50' : ''}>
-                      {isAdmin && (
+                      {(isAdmin || isGuru) && (
                         <TableCell>
                           <Checkbox
                             checked={selectedIds.has(d.id)}
