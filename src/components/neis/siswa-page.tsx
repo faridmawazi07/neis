@@ -14,7 +14,7 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 
@@ -45,6 +45,10 @@ export function SiswaPage() {
   // Kenaikan kelas
   const [kenaikanOpen, setKenaikanOpen] = useState(false);
   const [kenaikanMapping, setKenaikanMapping] = useState<Record<string, string>>({});
+
+  // Pagination
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Import/Export
   const importRef = useRef<HTMLInputElement>(null);
@@ -307,8 +311,25 @@ export function SiswaPage() {
     e.target.value = '';
   };
 
+  // Pagination computed values
+  const totalPages = Math.ceil(data.length / pageSize);
+  const paginatedData = data.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageStart = data.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, data.length);
+
+  // Reset page when filters change
+  useEffect(() => { setCurrentPage(1); }, [search, filterKelasId, pageSize]);
+
   const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  const toggleAll = () => setSelectedIds(prev => prev.length === data.length ? [] : data.map((d: any) => d.id));
+  const toggleAll = () => {
+    const pageIds = paginatedData.map((d: any) => d.id);
+    const allPageSelected = pageIds.every((id: string) => selectedIds.includes(id));
+    if (allPageSelected) {
+      setSelectedIds(prev => prev.filter(i => !pageIds.includes(i)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
+    }
+  };
 
   return (
     <div>
@@ -365,12 +386,13 @@ export function SiswaPage() {
       <Card><CardContent className="p-0">
         {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
         data.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data siswa</p> :
+        <>
         <div className="overflow-x-auto"><Table>
           <TableHeader><TableRow>
-            <TableHead className="w-10"><Checkbox checked={selectedIds.length === data.length && data.length > 0} onCheckedChange={toggleAll} /></TableHead>
+            <TableHead className="w-10"><Checkbox checked={paginatedData.length > 0 && paginatedData.every((d: any) => selectedIds.includes(d.id))} onCheckedChange={toggleAll} /></TableHead>
             <TableHead>NIS</TableHead><TableHead>NISN</TableHead><TableHead>Nama</TableHead><TableHead>Kelas</TableHead><TableHead>JK</TableHead><TableHead>Aksi</TableHead>
           </TableRow></TableHeader>
-          <TableBody>{data.map((d: any) => (
+          <TableBody>{paginatedData.map((d: any) => (
             <TableRow key={d.id}>
               <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
               <TableCell>{d.nis}</TableCell><TableCell>{d.nisn}</TableCell>
@@ -382,7 +404,54 @@ export function SiswaPage() {
               </div></TableCell>
             </TableRow>
           ))}</TableBody>
-        </Table></div>}
+        </Table></div>
+        {/* Pagination */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Tampilkan</span>
+            <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+              <SelectTrigger className="w-16 h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
+            <span>data &middot; {pageStart}-{pageEnd} dari {data.length}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage <= 1} onClick={() => setCurrentPage(1)}>
+              <ChevronLeft className="h-4 w-4" /><ChevronLeft className="h-4 w-4 -ml-3" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage <= 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+              .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('...');
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, idx) =>
+                typeof p === 'string' ? (
+                  <span key={`ellipsis-${idx}`} className="px-1 text-sm text-muted-foreground">...</span>
+                ) : (
+                  <Button key={p} variant={currentPage === p ? 'default' : 'outline'} size="icon" className="h-8 w-8" onClick={() => setCurrentPage(p)}>
+                    {p}
+                  </Button>
+                )
+              )
+            }
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(totalPages)}>
+              <ChevronRight className="h-4 w-4" /><ChevronRight className="h-4 w-4 -ml-3" />
+            </Button>
+          </div>
+        </div>
+        </>}
       </CardContent></Card>
 
       {/* Add/Edit Form */}
