@@ -13,10 +13,11 @@ interface ImageModalProps {
 
 export function ImageModal({ open, onClose, src, alt = 'Image' }: ImageModalProps) {
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl w-full p-0 border-0 bg-black/90 overflow-hidden">
+    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
+      <DialogContent className="max-w-4xl w-full p-0 border-0 bg-black/90 overflow-hidden" showCloseButton={false}>
         <div className="relative">
           <Button
+            type="button"
             variant="ghost"
             size="icon"
             className="absolute top-2 right-2 z-10 text-white hover:bg-white/20 rounded-full"

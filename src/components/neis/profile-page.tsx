@@ -229,8 +229,8 @@ export function ProfilePage() {
           <div className="flex flex-col items-center mb-6">
             <div className="relative">
               {fotoSrc ? (
-                <button onClick={() => { setImageSrc(fotoSrc); setImageOpen(true); }}>
-                  <img src={fotoSrc} alt="Profile" className="w-24 h-24 rounded-full object-cover border-4 border-ocean/20 hover:ring-2 hover:ring-ocean transition-all cursor-pointer" />
+                <button type="button" onClick={() => { setImageSrc(fotoSrc); setImageOpen(true); }} className="hover:ring-2 hover:ring-ocean rounded-full transition-all">
+                  <img src={fotoSrc} alt="Profile" className="w-24 h-24 rounded-full object-cover border-4 border-ocean/20" />
                 </button>
               ) : (
                 <div className="w-24 h-24 rounded-full bg-ocean/10 flex items-center justify-center text-2xl font-bold text-ocean">

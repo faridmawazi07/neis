@@ -286,22 +286,23 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
     if (d.foto_profile) {
       return (
         <button
+          type="button"
           onClick={() => openImagePreview(d.foto_profile, d.nama)}
-          className="relative group"
+          className="relative group w-10 h-10 rounded-full focus:outline-none focus:ring-2 focus:ring-ocean"
         >
           <img
             src={d.foto_profile}
             alt={d.nama}
-            className="w-9 h-9 rounded-full object-cover cursor-pointer hover:ring-2 hover:ring-ocean dark:hover:ring-sky-400 transition-all"
+            className="w-full h-full rounded-full object-cover ring-2 ring-transparent group-hover:ring-ocean dark:group-hover:ring-sky-400 transition-all"
           />
-          <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
-            <Eye className="h-3 w-3 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center pointer-events-none">
+            <Eye className="h-3.5 w-3.5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         </button>
       );
     }
     return (
-      <div className="w-9 h-9 rounded-full bg-ocean/20 flex items-center justify-center text-xs font-bold text-ocean">
+      <div className="w-10 h-10 rounded-full bg-ocean/20 flex items-center justify-center text-xs font-bold text-ocean">
         {d.nama?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
       </div>
     );
@@ -402,8 +403,8 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 {approveModal.foto_profile ? (
-                  <button onClick={() => openImagePreview(approveModal.foto_profile, approveModal.nama)}>
-                    <img src={approveModal.foto_profile} alt={approveModal.nama} className="w-12 h-12 rounded-full object-cover hover:ring-2 hover:ring-ocean cursor-pointer" />
+                  <button type="button" onClick={() => openImagePreview(approveModal.foto_profile, approveModal.nama)} className="hover:ring-2 hover:ring-ocean rounded-full transition-all">
+                    <img src={approveModal.foto_profile} alt={approveModal.nama} className="w-12 h-12 rounded-full object-cover" />
                   </button>
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">?</div>
@@ -447,8 +448,8 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
               <div className="flex items-center gap-3">
                 <div className="shrink-0">
                   {editPhotoPreview ? (
-                    <button type="button" onClick={() => openImagePreview(editPhotoPreview, editForm.nama)}>
-                      <img src={editPhotoPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover hover:ring-2 hover:ring-ocean cursor-pointer" />
+                    <button type="button" onClick={() => openImagePreview(editPhotoPreview, editForm.nama)} className="hover:ring-2 hover:ring-ocean rounded-full transition-all">
+                      <img src={editPhotoPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover" />
                     </button>
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">

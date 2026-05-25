@@ -295,7 +295,7 @@ export function KehadiranPage() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {d.guru_foto && (
-                              <button onClick={() => { setImageModalSrc(d.guru_foto); setImageModalOpen(true); }}>
+                              <button type="button" onClick={() => { setImageModalSrc(d.guru_foto); setImageModalOpen(true); }} className="hover:ring-2 hover:ring-ocean rounded-full transition-all">
                                 <img src={d.guru_foto} alt={d.guru_nama} className="w-7 h-7 rounded-full object-cover" />
                               </button>
                             )}
@@ -315,7 +315,7 @@ export function KehadiranPage() {
                       <TableCell className="text-center">{d.jumlah_alfa}</TableCell>
                       <TableCell>
                         {d.foto_mengajar && (
-                          <button onClick={() => { setImageModalSrc(d.foto_mengajar); setImageModalOpen(true); }}>
+                          <button type="button" onClick={() => { setImageModalSrc(d.foto_mengajar); setImageModalOpen(true); }} className="hover:ring-2 hover:ring-ocean rounded transition-all">
                             <img src={d.foto_mengajar} alt="Foto" className="w-10 h-10 rounded object-cover" />
                           </button>
                         )}
