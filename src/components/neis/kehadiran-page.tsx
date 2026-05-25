@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Search, CalendarIcon, Plus, Download, FileSpreadsheet, Edit, Trash2, Eye } from 'lucide-react';
+import { Search, CalendarIcon, Plus, Download, FileSpreadsheet, Edit, Trash2, Eye, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -24,6 +24,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 
 export function KehadiranPage() {
   const { user } = useAuthStore();
@@ -49,6 +52,9 @@ export function KehadiranPage() {
 
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Materi popup
+  const [materiPopup, setMateriPopup] = useState<string>('');
 
   // Holiday check
   const [isHoliday, setIsHoliday] = useState(false);
@@ -147,7 +153,7 @@ export function KehadiranPage() {
     }
     autoTable(doc, {
       startY: 28,
-      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Jam Ke', 'Status']],
+      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Status']],
       body: data.map((d) => [
         d.tanggal,
         d.guru_nama,
@@ -157,6 +163,7 @@ export function KehadiranPage() {
         d.jumlah_izin_sakit,
         d.jumlah_alfa,
         d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa),
+        d.materi_pembelajaran || '-',
         d.jam_ke,
         d.nama_status,
       ]),
@@ -166,9 +173,9 @@ export function KehadiranPage() {
 
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
-    const wsData = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Jam Ke', 'Status', 'Materi']];
+    const wsData = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Status']];
     data.forEach((d) => {
-      wsData.push([d.tanggal, d.guru_nama, d.nama_kelas, d.nama_mapel, d.jumlah_hadir, d.jumlah_izin_sakit, d.jumlah_alfa, d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa), d.jam_ke, d.nama_status, d.materi_pembelajaran]);
+      wsData.push([d.tanggal, d.guru_nama, d.nama_kelas, d.nama_mapel, d.jumlah_hadir, d.jumlah_izin_sakit, d.jumlah_alfa, d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa), d.materi_pembelajaran || '-', d.jam_ke, d.nama_status]);
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -283,6 +290,7 @@ export function KehadiranPage() {
                     <TableHead className="text-center">I/S</TableHead>
                     <TableHead className="text-center">Alfa</TableHead>
                     <TableHead className="text-center">Jumlah</TableHead>
+                    <TableHead>Materi</TableHead>
                     <TableHead>Jam Ke</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Foto</TableHead>
@@ -314,6 +322,20 @@ export function KehadiranPage() {
                       <TableCell className="text-center">{d.jumlah_izin_sakit}</TableCell>
                       <TableCell className="text-center">{d.jumlah_alfa}</TableCell>
                       <TableCell className="text-center">{d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa)}</TableCell>
+                      <TableCell>
+                        {d.materi_pembelajaran ? (
+                          <button
+                            type="button"
+                            onClick={() => setMateriPopup(d.materi_pembelajaran)}
+                            className="text-left text-xs text-muted-foreground hover:text-foreground transition-colors max-w-[120px] truncate block cursor-pointer"
+                            title={d.materi_pembelajaran}
+                          >
+                            {d.materi_pembelajaran}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
                       <TableCell>{d.jam_ke}</TableCell>
                       <TableCell>{d.nama_status}</TableCell>
                       <TableCell>
@@ -390,6 +412,20 @@ export function KehadiranPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Materi Popup */}
+      <Dialog open={!!materiPopup} onOpenChange={(open) => { if (!open) setMateriPopup(''); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-ocean" /> Materi Pembelajaran
+            </DialogTitle>
+          </DialogHeader>
+          <div className="text-sm whitespace-pre-wrap leading-relaxed max-h-[60vh] overflow-y-auto">
+            {materiPopup}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
