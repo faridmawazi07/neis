@@ -74,3 +74,34 @@ Stage Summary:
 - Admin can now select multiple kehadiran records via checkboxes and delete them all at once
 - Bulk delete is admin-only (API enforces this)
 - Single delete still works for both admin and guru
+
+---
+Task ID: 4
+Agent: Main Orchestrator
+Task: Integrate Cloudinary cloud storage for photo uploads
+
+Work Log:
+- Installed `cloudinary` SDK (v2.10.0)
+- Created `/src/lib/cloudinary.ts` utility with:
+  - `loadCloudinaryConfig()` - reads CLOUDINARY_* vars from `.neis.env` (survives sandbox reset)
+  - `isCloudinaryConfigured()` - checks if all 3 vars are set
+  - `uploadToCloudinary()` - uploads base64 data URL to Cloudinary with auto quality/format optimization
+  - `deleteFromCloudinary()` - deletes image by extracting public_id from URL
+  - `uploadImage()` - smart upload with fallback to base64 if Cloudinary not configured
+- Created `/src/app/api/upload/route.ts` - dedicated upload API with status check endpoint
+- Updated `/src/app/api/kehadiran-mengajar/route.ts` POST & PUT to use `uploadImage()` for foto_mengajar
+- Updated `/src/app/api/users/update-profile/route.ts` to use `uploadImage()` for foto_profile (both File and base64 string)
+- Updated `/src/app/api/auth/register/route.ts` to use `uploadImage()` for foto_profile
+- Added Cloudinary status card to `git-control.tsx` showing:
+  - Connected/not configured status with badge
+  - Step-by-step setup guide when not configured
+  - Cloud name display when connected
+- Added `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` placeholders to `.neis.env`
+- Lint passes cleanly
+
+Stage Summary:
+- Cloudinary integration complete with graceful fallback to base64 when not configured
+- All photo uploads (profile + kehadiran) now go through `uploadImage()` which tries Cloudinary first
+- Admin can see Cloudinary status in Git Control page with setup instructions
+- Zero breaking changes - existing base64 photos still work fine
+- To activate: add Cloudinary credentials to `.neis.env` and restart dev server
