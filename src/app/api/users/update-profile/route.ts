@@ -13,8 +13,12 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const id = formData.get('id') as string;
     const nama = formData.get('nama') as string | null;
-    const foto_profile = formData.get('foto_profile') as File | null;
     const nip = formData.get('nip') as string | null;
+    const role = formData.get('role') as string | null;
+    const jenis_kelamin = formData.get('jenis_kelamin') as string | null;
+    const tanggal_lahir = formData.get('tanggal_lahir') as string | null;
+    const foto_profile = formData.get('foto_profile') as File | null;
+    const remove_photo = formData.get('remove_photo') as string | null;
 
     if (!id) {
       return NextResponse.json({ error: 'ID pengguna wajib diisi' }, { status: 400 });
@@ -27,7 +31,7 @@ export async function POST(req: NextRequest) {
 
     // Check if user exists
     const existing = await turso.execute({
-      sql: 'SELECT id, nip, foto_profile FROM users WHERE id = ?',
+      sql: 'SELECT id, nip FROM users WHERE id = ?',
       args: [id],
     });
     if (existing.rows.length === 0) {
@@ -61,6 +65,33 @@ export async function POST(req: NextRequest) {
       args.push(nip.trim());
     }
 
+    // Only admin can update role
+    if (role !== null && role.trim()) {
+      if (payload.role !== 'admin') {
+        return NextResponse.json({ error: 'Forbidden - Role tidak dapat diubah oleh pengguna biasa' }, { status: 403 });
+      }
+      if (!['guru', 'pegawai', 'pimpinan'].includes(role.trim())) {
+        return NextResponse.json({ error: 'Role tidak valid' }, { status: 400 });
+      }
+      updates.push('role = ?');
+      args.push(role.trim());
+    }
+
+    // Jenis kelamin
+    if (jenis_kelamin !== null) {
+      if (jenis_kelamin && !['L', 'P'].includes(jenis_kelamin)) {
+        return NextResponse.json({ error: 'Jenis kelamin tidak valid' }, { status: 400 });
+      }
+      updates.push('jenis_kelamin = ?');
+      args.push(jenis_kelamin || null);
+    }
+
+    // Tanggal lahir
+    if (tanggal_lahir !== null) {
+      updates.push('tanggal_lahir = ?');
+      args.push(tanggal_lahir || null);
+    }
+
     // Handle photo upload - store as base64 data URL
     if (foto_profile && typeof foto_profile !== 'string') {
       const bytes = await foto_profile.arrayBuffer();
@@ -71,6 +102,10 @@ export async function POST(req: NextRequest) {
 
       updates.push('foto_profile = ?');
       args.push(dataUrl);
+    } else if (remove_photo === 'true') {
+      // Admin explicitly removes photo
+      updates.push('foto_profile = ?');
+      args.push(null);
     }
 
     if (updates.length === 0) {
