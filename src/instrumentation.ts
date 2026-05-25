@@ -1,10 +1,13 @@
 /**
- * Next.js Instrumentation - Auto-Push Service
+ * Next.js Instrumentation - Auto-Push & Sandbox Reset Protection
  * 
  * This runs once when the Next.js server starts and stays alive
- * as long as the server is running. This is the best way to run
- * a periodic background task in a sandbox environment where
- * separate processes get killed.
+ * as long as the server is running.
+ * 
+ * Features:
+ * 1. On startup: Detect sandbox reset → auto-pull from GitHub
+ * 2. Every 5 min: Smart auto-push (pull if behind, push if ahead)
+ * 3. Prevents stale code from overwriting good GitHub code
  */
 
 export async function register() {
@@ -13,13 +16,10 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV !== 'production') {
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
-    const { readFileSync, writeFileSync, existsSync } = await import('fs');
+    const { readFileSync, existsSync } = await import('fs');
 
     const execAsync = promisify(exec);
     const PROJECT_DIR = '/home/z/my-project';
-    const GITHUB_USER = 'faridmawazi07';
-    const GITHUB_REPO = 'faridmawazi07/neis.git';
-    const COMMIT_TRACK_FILE = '/home/z/my-project/.neis-last-push-commit';
     const NEIS_ENV_FILE = '/home/z/my-project/.neis.env';
 
     function getGitHubPAT(): string {
@@ -42,33 +42,83 @@ export async function register() {
 
     const GITHUB_PAT = getGitHubPAT();
 
-    // Import the shared auto-push state from git-control route
-    // We'll use an internal HTTP call to the API instead of duplicating logic
-    
     let lastPushTime = 0;
     let currentIntervalMinutes = 5;
+    let startupSyncDone = false;
 
-    async function triggerAutoPush(): Promise<void> {
-      const timestamp = new Date().toISOString();
+    /**
+     * Call the git-control API with internal auth
+     */
+    async function callGitControl(action: string): Promise<any> {
+      const res = await fetch('http://localhost:3000/api/git-control', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer neis-internal-auto-push',
+          'X-Auto-Push': 'true',
+        },
+        body: JSON.stringify({ action }),
+      });
+      return { status: res.status, data: await res.json() };
+    }
+
+    /**
+     * STEP 1: Startup sync - Detect sandbox reset and auto-recover
+     * This runs FIRST before any auto-push attempts
+     */
+    async function startupSync(): Promise<void> {
       try {
-        const res = await fetch('http://localhost:3000/api/git-control', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer neis-internal-auto-push',
-            'X-Auto-Push': 'true',
-          },
-          body: JSON.stringify({ action: 'auto-push-trigger' }),
-        });
+        console.log('[SandboxProtection] 🔍 Checking sandbox state on startup...');
+        const { status, data } = await callGitControl('startup-sync');
 
-        const data = await res.json();
-
-        if (data.skipped) {
-          console.log(`[AutoPush] ⏭️ Skipped: ${data.message || 'disabled'}`);
-        } else if (res.ok) {
-          console.log(`[AutoPush] ✅ ${data.message}`);
+        if (data.resetDetected && data.recovered) {
+          console.log('[SandboxProtection] ✅ RESET DETECTED & RECOVERED! Code pulled from GitHub.');
+        } else if (data.resetDetected && !data.recovered) {
+          console.error('[SandboxProtection] ❌ RESET DETECTED but recovery FAILED:', data.message);
+        } else if (data.recovered) {
+          console.log('[SandboxProtection] ✅ Code updated from GitHub:', data.message);
         } else {
-          console.error(`[AutoPush] ❌ Failed: ${data.error || data.message}`);
+          console.log('[SandboxProtection] ✅ Sandbox is synced with GitHub.');
+        }
+      } catch (error: any) {
+        console.error(`[SandboxProtection] ❌ Startup sync error: ${error?.message || error}`);
+      }
+      startupSyncDone = true;
+    }
+
+    /**
+     * STEP 2: Smart auto-push - Pull if behind, push if ahead
+     */
+    async function triggerSmartAutoPush(): Promise<void> {
+      try {
+        // First check sync status
+        const { data: syncData } = await callGitControl('sync-status');
+        
+        if (!syncData.synced || syncData.sandboxReset) {
+          // Not synced or reset detected - auto-pull instead of push
+          console.log('[SandboxProtection] 🔄 Not synced. Auto-pulling from GitHub...');
+          const { data: pullData } = await callGitControl('auto-pull-trigger');
+          if (pullData.message) {
+            console.log(`[SandboxProtection] ✅ Auto-pull: ${pullData.message}`);
+          } else if (pullData.error) {
+            console.error(`[SandboxProtection] ❌ Auto-pull failed: ${pullData.error}`);
+          }
+          return;
+        }
+
+        // Synced - safe to push
+        const { data } = await callGitControl('auto-push-trigger');
+
+        if (data.blocked && data.autoRecovered) {
+          console.log(`[SandboxProtection] 🔄 Push blocked, auto-recovered: ${data.message}`);
+        } else if (data.blocked) {
+          console.log(`[SandboxProtection] 🚫 Push blocked: ${data.message}`);
+        } else if (data.skipped) {
+          console.log(`[AutoPush] ⏭️ Skipped: ${data.message || 'disabled'}`);
+        } else if (data.error) {
+          console.error(`[AutoPush] ❌ Failed: ${data.error}`);
+        } else {
+          console.log(`[AutoPush] ✅ ${data.message}`);
         }
       } catch (error: any) {
         console.error(`[AutoPush] ❌ Error: ${error?.message || error}`);
@@ -77,18 +127,8 @@ export async function register() {
 
     async function fetchStatus(): Promise<{ enabled: boolean; intervalMinutes: number }> {
       try {
-        const res = await fetch('http://localhost:3000/api/git-control', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer neis-internal-auto-push',
-            'X-Auto-Push': 'true',
-          },
-          body: JSON.stringify({ action: 'auto-push-status' }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
+        const { data } = await callGitControl('auto-push-status');
+        if (data) {
           return {
             enabled: data.enabled ?? true,
             intervalMinutes: data.intervalMinutes ?? 5,
@@ -110,25 +150,40 @@ export async function register() {
         const now = Date.now();
         const intervalMs = currentIntervalMinutes * 60 * 1000;
         
-        if (status.enabled && (now - lastPushTime) >= intervalMs) {
+        if ((now - lastPushTime) >= intervalMs) {
           lastPushTime = now;
-          await triggerAutoPush();
+          await triggerSmartAutoPush();
         }
       } catch (error: any) {
         console.error(`[AutoPush] Check error: ${error?.message || error}`);
       }
     }
 
-    console.log('[AutoPush] 🚀 Service initialized via Next.js instrumentation');
+    console.log('[SandboxProtection] 🚀 Service initialized via Next.js instrumentation');
     
-    // Initial push after 30 seconds
+    // STEP 1: Startup sync after 15 seconds (check for sandbox reset)
     setTimeout(() => {
-      console.log('[AutoPush] 🕐 First push starting...');
-      lastPushTime = Date.now();
-      triggerAutoPush();
-    }, 30000);
+      console.log('[SandboxProtection] 🔍 Running startup sync check...');
+      startupSync();
+    }, 15000);
 
-    // Periodic check every 30 seconds
+    // STEP 2: First auto-push after 60 seconds (after startup sync is done)
+    setTimeout(() => {
+      if (startupSyncDone) {
+        console.log('[AutoPush] 🕐 First push check starting...');
+        lastPushTime = Date.now();
+        triggerSmartAutoPush();
+      } else {
+        console.log('[AutoPush] ⏳ Waiting for startup sync to complete...');
+        // Retry after 30 more seconds
+        setTimeout(() => {
+          lastPushTime = Date.now();
+          triggerSmartAutoPush();
+        }, 30000);
+      }
+    }, 60000);
+
+    // STEP 3: Periodic check every 30 seconds
     setInterval(checkAndPush, 30000);
   }
 }

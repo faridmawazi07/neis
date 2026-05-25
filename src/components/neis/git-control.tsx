@@ -8,28 +8,20 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import {
   Upload, Download, Loader2, Settings, Wifi, WifiOff, Clock, GitBranch,
   AlertCircle, CheckCircle2, Cloud, HardDrive, ImageIcon, Zap,
+  ShieldAlert, ShieldCheck, RefreshCw, RotateCcw, Shield,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface CloudinaryInfo {
   configured: boolean;
   error?: string;
-  storage?: {
-    usedMB: number;
-    limitMB: number;
-    percentage: number;
-  };
-  bandwidth?: {
-    usedMB: number;
-    limitMB: number;
-    percentage: number;
-  };
+  limitedAccess?: boolean;
+  storage?: { usedMB: number; limitMB: number; percentage: number };
+  bandwidth?: { usedMB: number; limitMB: number; percentage: number };
   resources?: number;
   plan?: string;
 }
@@ -44,17 +36,18 @@ interface GitStatus {
   hasUncommittedChanges: boolean;
   ahead: number;
   behind: number;
+  synced: boolean;
+  needsPull: boolean;
+  sandboxReset: boolean;
+  syncMarkerPresent: boolean;
+  fetched: boolean;
   cloudinary: CloudinaryInfo;
 }
 
 function formatTime(iso: string | null): string {
   if (!iso) return 'Belum pernah';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return iso;
-  }
+  try { return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+  catch { return iso; }
 }
 
 export function GitControlPage() {
@@ -68,7 +61,9 @@ export function GitControlPage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<GitStatus>({
     connected: false, autoPush: true, lastPush: null, lastPull: null,
-    branch: 'dev', currentBranch: 'main', hasUncommittedChanges: false, ahead: 0, behind: 0,
+    branch: 'dev', currentBranch: 'main', hasUncommittedChanges: false,
+    ahead: 0, behind: 0, synced: true, needsPull: false,
+    sandboxReset: false, syncMarkerPresent: true, fetched: false,
     cloudinary: { configured: false },
   });
 
@@ -76,26 +71,19 @@ export function GitControlPage() {
     setLoading(true);
     try {
       const res = await fetch('/api/git-control', { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
-        setAutoPush(data.autoPush);
-        setBranch(data.branch);
-      }
+      if (res.ok) { const data = await res.json(); setStatus(data); setAutoPush(data.autoPush); setBranch(data.branch); }
     } catch {} finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const handlePush = async () => {
+    if (!status.synced) { toast({ title: 'Push Diblokir', description: 'Sandbox belum sinkron. Ambil kode dari GitHub terlebih dahulu.', variant: 'destructive' }); return; }
     setPushing(true);
     try {
-      const res = await fetch('/api/git-control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'push' }), credentials: 'include',
-      });
+      const res = await fetch('/api/git-control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'push' }), credentials: 'include' });
       const data = await res.json();
-      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
+      if (!res.ok) { toast({ title: data.blocked ? 'Push Diblokir' : 'Gagal', description: data.error, variant: 'destructive' }); return; }
       toast({ title: 'Berhasil', description: data.message });
       fetchStatus();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan koneksi', variant: 'destructive' }); }
@@ -105,10 +93,7 @@ export function GitControlPage() {
   const handlePull = async () => {
     setPulling(true);
     try {
-      const res = await fetch('/api/git-control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'pull' }), credentials: 'include',
-      });
+      const res = await fetch('/api/git-control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'pull' }), credentials: 'include' });
       const data = await res.json();
       if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
       toast({ title: 'Berhasil', description: data.message });
@@ -120,10 +105,7 @@ export function GitControlPage() {
   const handleSaveConfig = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/git-control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save-config', autoPush, branch }), credentials: 'include',
-      });
+      const res = await fetch('/api/git-control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save-config', autoPush, branch }), credentials: 'include' });
       const data = await res.json();
       if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
       toast({ title: 'Berhasil', description: 'Konfigurasi berhasil disimpan' });
@@ -144,7 +126,74 @@ export function GitControlPage() {
         </Button>
       </div>
 
-      {/* GitHub Connection Status */}
+      {/* ====== SANDBOX RESET WARNING ====== */}
+      {!loading && status.connected && (status.sandboxReset || !status.syncMarkerPresent) && (
+        <Card className="mb-4 border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="font-bold text-red-700 dark:text-red-400 text-base">
+                  {status.sandboxReset ? '🚨 Sandbox Reset Terdeteksi!' : '⚠️ Sandbox Belum Sinkron'}
+                </h3>
+                <p className="text-sm text-red-600 dark:text-red-500 mt-1">
+                  {status.sandboxReset 
+                    ? <>Sandbox telah direset. <strong>Push ke GitHub diblokir</strong> untuk mencegah kode lama menimpa kode terbaru di GitHub. Kode akan otomatis dipulihkan dari GitHub.</>
+                    : <>Kode lokal kemungkinan sudah usang. <strong>Push ke GitHub diblokir</strong> sampai kode disinkronkan.</>
+                  }
+                </p>
+                <div className="mt-3 space-y-2">
+                  <Button onClick={handlePull} disabled={pulling} className="bg-red-600 hover:bg-red-700 text-white" size="sm">
+                    {pulling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    {pulling ? 'Memulihkan...' : 'Pulihkan dari GitHub'}
+                  </Button>
+                  <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
+                    <RotateCcw className="h-3 w-3" /> 
+                    {status.sandboxReset 
+                      ? 'Auto-recovery akan berjalan saat server start'
+                      : 'Klik tombol di atas untuk mulai sinkronisasi'
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ====== SYNCED SUCCESS ====== */}
+      {!loading && status.connected && status.synced && !status.sandboxReset && (
+        <Card className="mb-4 border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-green-600 shrink-0" />
+              <span className="font-medium text-sm text-green-700 dark:text-green-400">Sandbox sinkron dengan GitHub</span>
+              <Badge className="bg-green-600 ml-auto">Aman</Badge>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ====== BEHIND WARNING (synced but behind) ====== */}
+      {!loading && status.connected && status.syncMarkerPresent && !status.sandboxReset && status.behind > 0 && (
+        <Card className="mb-4 border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-sm text-orange-700 dark:text-orange-400">
+                  Kode lokal tertinggal {status.behind} commit dari GitHub
+                </p>
+                <p className="text-xs text-orange-600 dark:text-orange-500 mt-1">
+                  Auto-pull akan berjalan pada siklus berikutnya, atau klik &quot;Ambil dari GitHub&quot; untuk sinkronkan sekarang.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ====== GitHub Connection ====== */}
       <Card className="mb-4">
         <CardContent className="p-4 space-y-3">
           {loading ? (
@@ -156,58 +205,37 @@ export function GitControlPage() {
                   {status.connected ? <Wifi className="h-5 w-5 text-green-500" /> : <WifiOff className="h-5 w-5 text-red-500" />}
                   <span className="font-medium text-sm">{status.connected ? 'GitHub Terhubung' : 'GitHub Belum Terhubung'}</span>
                 </div>
-                <Badge variant={status.connected ? 'default' : 'destructive'} className={status.connected ? 'bg-green-500' : ''}>
-                  {status.connected ? 'Aktif' : 'Tidak Aktif'}
-                </Badge>
+                <div className="flex gap-2">
+                  {status.synced && status.connected && <Badge className="bg-green-500"><ShieldCheck className="h-3 w-3 mr-1" /> Sinkron</Badge>}
+                  {!status.synced && status.connected && <Badge variant="destructive"><ShieldAlert className="h-3 w-3 mr-1" /> Belum Sinkron</Badge>}
+                  <Badge variant={status.connected ? 'default' : 'destructive'} className={status.connected ? 'bg-green-500' : ''}>
+                    {status.connected ? 'Aktif' : 'Tidak Aktif'}
+                  </Badge>
+                </div>
               </div>
-
               <Separator />
-
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <GitBranch className="h-4 w-4" /> Branch: <strong className="text-foreground">{status.branch}</strong>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" /> Auto Push: <strong className="text-foreground">{status.autoPush ? 'Aktif' : 'Nonaktif'}</strong>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Upload className="h-4 w-4" /> Push: <strong className="text-foreground">{formatTime(status.lastPush)}</strong>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Download className="h-4 w-4" /> Pull: <strong className="text-foreground">{formatTime(status.lastPull)}</strong>
-                </div>
+                <div className="flex items-center gap-2 text-muted-foreground"><GitBranch className="h-4 w-4" /> Branch: <strong className="text-foreground">{status.branch}</strong></div>
+                <div className="flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4" /> Auto Push: <strong className={`text-foreground ${!status.synced ? 'line-through opacity-50' : ''}`}>{status.autoPush ? 'Aktif' : 'Nonaktif'}</strong></div>
+                <div className="flex items-center gap-2 text-muted-foreground"><Upload className="h-4 w-4" /> Push: <strong className="text-foreground">{formatTime(status.lastPush)}</strong></div>
+                <div className="flex items-center gap-2 text-muted-foreground"><Download className="h-4 w-4" /> Pull: <strong className="text-foreground">{formatTime(status.lastPull)}</strong></div>
               </div>
-
               {(status.hasUncommittedChanges || status.ahead > 0 || status.behind > 0) && (
                 <>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
-                    {status.hasUncommittedChanges && (
-                      <Badge variant="outline" className="text-amber-600 border-amber-300"><AlertCircle className="h-3 w-3 mr-1" /> Ada perubahan belum disimpan</Badge>
-                    )}
-                    {status.ahead > 0 && (
-                      <Badge variant="outline" className="text-blue-600 border-blue-300"><Upload className="h-3 w-3 mr-1" /> {status.ahead} commit belum di-push</Badge>
-                    )}
-                    {status.behind > 0 && (
-                      <Badge variant="outline" className="text-orange-600 border-orange-300"><Download className="h-3 w-3 mr-1" /> {status.behind} commit belum di-pull</Badge>
-                    )}
+                    {status.hasUncommittedChanges && <Badge variant="outline" className="text-amber-600 border-amber-300"><AlertCircle className="h-3 w-3 mr-1" /> Ada perubahan belum disimpan</Badge>}
+                    {status.ahead > 0 && <Badge variant="outline" className="text-blue-600 border-blue-300"><Upload className="h-3 w-3 mr-1" /> {status.ahead} commit belum di-push</Badge>}
+                    {status.behind > 0 && <Badge variant="outline" className="text-orange-600 border-orange-300"><Download className="h-3 w-3 mr-1" /> {status.behind} commit belum di-pull</Badge>}
                   </div>
                 </>
               )}
-
-              {status.connected && !status.hasUncommittedChanges && status.ahead === 0 && status.behind === 0 && (
+              {status.connected && status.synced && !status.hasUncommittedChanges && status.ahead === 0 && status.behind === 0 && (
                 <div className="flex items-center gap-2 text-green-600 text-sm"><CheckCircle2 className="h-4 w-4" /> Semua sudah sinkron</div>
               )}
-
               {!status.connected && (
                 <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3 text-sm">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-medium text-amber-700 dark:text-amber-400">GitHub Token belum dikonfigurasi</p>
-                      <p className="text-amber-600 dark:text-amber-500 mt-1">Hubungi administrator untuk mengatur GITHUB_TOKEN di server.</p>
-                    </div>
-                  </div>
+                  <div className="flex items-start gap-2"><AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" /><div><p className="font-medium text-amber-700 dark:text-amber-400">GitHub Token belum dikonfigurasi</p><p className="text-amber-600 dark:text-amber-500 mt-1">Hubungi administrator untuk mengatur token di file .neis.env.</p></div></div>
                 </div>
               )}
             </>
@@ -215,173 +243,140 @@ export function GitControlPage() {
         </CardContent>
       </Card>
 
-      {/* Cloudinary Storage Status */}
+      {/* ====== Protection Status ====== */}
+      {!loading && status.connected && (
+        <Card className="mb-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-5 w-5 text-emerald-500" /> Proteksi Sandbox Reset
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+              <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                <div className={`h-2.5 w-2.5 rounded-full ${status.sandboxReset ? 'bg-red-500' : 'bg-green-500'}`} />
+                <span className="text-muted-foreground">Reset: </span>
+                <strong className={status.sandboxReset ? 'text-red-600' : 'text-green-600'}>
+                  {status.sandboxReset ? 'Terdeteksi!' : 'Tidak'}
+                </strong>
+              </div>
+              <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                <div className={`h-2.5 w-2.5 rounded-full ${status.syncMarkerPresent ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-muted-foreground">Marker: </span>
+                <strong className={status.syncMarkerPresent ? 'text-green-600' : 'text-red-600'}>
+                  {status.syncMarkerPresent ? 'Ada' : 'Hilang'}
+                </strong>
+              </div>
+              <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                <div className={`h-2.5 w-2.5 rounded-full ${status.synced ? 'bg-green-500' : 'bg-orange-500'}`} />
+                <span className="text-muted-foreground">Push: </span>
+                <strong className={status.synced ? 'text-green-600' : 'text-orange-600'}>
+                  {status.synced ? 'Diizinkan' : 'Diblokir'}
+                </strong>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Saat sandbox reset, marker sinkronisasi hilang &rarr; push diblokir &rarr; auto-pull dari GitHub &rarr; push dibuka kembali
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ====== Cloudinary ====== */}
       <Card className="mb-4">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Cloud className="h-5 w-5 text-sky-500" /> Cloudinary Penyimpanan Foto
-          </CardTitle>
-        </CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Cloud className="h-5 w-5 text-sky-500" /> Cloudinary Penyimpanan Foto</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {loading ? (
             <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-sky-500" /></div>
           ) : !cld.configured ? (
             <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3 text-sm">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-medium text-amber-700 dark:text-amber-400">Cloudinary Belum Dikonfigurasi</p>
-                  <p className="text-amber-600 dark:text-amber-500 mt-1">Atur CLOUDINARY_CLOUD_NAME, API_KEY, dan API_SECRET di server.</p>
-                </div>
-              </div>
+              <div className="flex items-start gap-2"><AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" /><div><p className="font-medium text-amber-700 dark:text-amber-400">Cloudinary Belum Dikonfigurasi</p><p className="text-amber-600 dark:text-amber-500 mt-1">Atur CLOUDINARY_CLOUD_NAME, API_KEY, dan API_SECRET di file .neis.env.</p></div></div>
             </div>
-          ) : cld.error ? (
-            <div className="flex items-center gap-2 text-sm text-destructive"><AlertCircle className="h-4 w-4" /> {cld.error}</div>
+          ) : cld.limitedAccess ? (
+            <>
+              <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Cloud className="h-4 w-4 text-sky-500" /><span className="font-medium text-sm">Terhubung</span></div><Badge className="bg-sky-500 capitalize">{cld.plan || 'Free'} Plan</Badge></div>
+              <Separator />
+              <div className="flex items-center gap-2 text-sm text-sky-600 dark:text-sky-400"><CheckCircle2 className="h-4 w-4" /><span>Cloudinary aktif untuk menyimpan foto</span></div>
+              <p className="text-xs text-muted-foreground">Statistik penggunaan tidak tersedia (akun Free tier)</p>
+            </>
           ) : (
             <>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Cloud className="h-4 w-4 text-sky-500" />
-                  <span className="font-medium text-sm">Terhubung</span>
-                </div>
-                <Badge className="bg-sky-500 capitalize">{cld.plan || 'Free'} Plan</Badge>
-              </div>
-
+              <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Cloud className="h-4 w-4 text-sky-500" /><span className="font-medium text-sm">Terhubung</span></div><Badge className="bg-sky-500 capitalize">{cld.plan || 'Free'} Plan</Badge></div>
               <Separator />
-
-              {/* Storage */}
-              {cld.storage && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <HardDrive className="h-4 w-4" /> Penyimpanan
-                    </div>
-                    <span className="font-medium">{cld.storage.usedMB} MB / {cld.storage.limitMB} MB</span>
-                  </div>
-                  <Progress value={cld.storage.percentage} className="h-2" />
-                  <p className="text-xs text-muted-foreground text-right">{cld.storage.percentage}% terpakai</p>
-                </div>
-              )}
-
-              {/* Bandwidth */}
-              {cld.bandwidth && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Zap className="h-4 w-4" /> Bandwidth
-                    </div>
-                    <span className="font-medium">{cld.bandwidth.usedMB} MB / {cld.bandwidth.limitMB} MB</span>
-                  </div>
-                  <Progress value={cld.bandwidth.percentage} className="h-2" />
-                  <p className="text-xs text-muted-foreground text-right">{cld.bandwidth.percentage}% terpakai</p>
-                </div>
-              )}
-
-              {/* Resources */}
-              <div className="grid grid-cols-2 gap-3 text-sm pt-1">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <ImageIcon className="h-4 w-4" /> Foto: <strong className="text-foreground">{cld.resources ?? 0}</strong>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <HardDrive className="h-4 w-4" /> Turunan: <strong className="text-foreground">{cld.derivedResources ?? 0}</strong>
-                </div>
-              </div>
+              {cld.storage && (<div className="space-y-2"><div className="flex items-center justify-between text-sm"><div className="flex items-center gap-2 text-muted-foreground"><HardDrive className="h-4 w-4" /> Penyimpanan</div><span className="font-medium">{cld.storage.usedMB} MB / {cld.storage.limitMB} MB</span></div><Progress value={cld.storage.percentage} className="h-2" /><p className="text-xs text-muted-foreground text-right">{cld.storage.percentage}% terpakai</p></div>)}
+              {cld.bandwidth && (<div className="space-y-2"><div className="flex items-center justify-between text-sm"><div className="flex items-center gap-2 text-muted-foreground"><Zap className="h-4 w-4" /> Bandwidth</div><span className="font-medium">{cld.bandwidth.usedMB} MB / {cld.bandwidth.limitMB} MB</span></div><Progress value={cld.bandwidth.percentage} className="h-2" /><p className="text-xs text-muted-foreground text-right">{cld.bandwidth.percentage}% terpakai</p></div>)}
+              <div className="grid grid-cols-2 gap-3 text-sm pt-1"><div className="flex items-center gap-2 text-muted-foreground"><ImageIcon className="h-4 w-4" /> Foto: <strong className="text-foreground">{cld.resources ?? 0}</strong></div><div className="flex items-center gap-2 text-muted-foreground"><HardDrive className="h-4 w-4" /> Turunan: <strong className="text-foreground">{cld.derivedResources ?? 0}</strong></div></div>
             </>
           )}
         </CardContent>
       </Card>
 
-      {/* Push & Pull Buttons */}
+      {/* ====== Push & Pull ====== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Upload className="h-5 w-5 text-ocean" /> Simpan ke GitHub
-            </CardTitle>
-          </CardHeader>
+        <Card className={!status.synced ? 'opacity-60' : ''}>
+          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Upload className="h-5 w-5 text-ocean" /> Simpan ke GitHub</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              Push kode dan data terbaru ke branch <strong>{status.branch}</strong>.
-            </p>
-            <Button onClick={handlePush} disabled={pushing || !status.connected} className="w-full bg-ocean hover:bg-ocean-dark text-white">
+            <p className="text-sm text-muted-foreground mb-4">Push kode terbaru ke branch <strong>{status.branch}</strong>.</p>
+            <Button onClick={handlePush} disabled={pushing || !status.connected || !status.synced} className="w-full bg-ocean hover:bg-ocean-dark text-white">
               {pushing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
               {pushing ? 'Menyimpan...' : 'Simpan ke GitHub'}
             </Button>
             {!status.connected && <p className="text-xs text-destructive mt-2">GitHub Token belum dikonfigurasi</p>}
+            {status.connected && !status.synced && <p className="text-xs text-red-500 mt-2 flex items-center gap-1"><ShieldAlert className="h-3 w-3" /> Diblokir - Sinkronkan dulu</p>}
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Download className="h-5 w-5 text-green-600" /> Ambil dari GitHub
-            </CardTitle>
-          </CardHeader>
+        <Card className={status.needsPull && status.connected ? 'ring-2 ring-orange-300' : ''}>
+          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Download className="h-5 w-5 text-green-600" /> Ambil dari GitHub</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground mb-4">
-              Pull kode terbaru dari branch <strong>{status.branch}</strong>.
-            </p>
+            <p className="text-sm text-muted-foreground mb-4">Pull kode terbaru dari branch <strong>{status.branch}</strong>.</p>
             <Button onClick={handlePull} disabled={pulling || !status.connected} className="w-full bg-green-600 hover:bg-green-700 text-white">
               {pulling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
               {pulling ? 'Mengambil...' : 'Ambil dari GitHub'}
             </Button>
             {!status.connected && <p className="text-xs text-destructive mt-2">GitHub Token belum dikonfigurasi</p>}
+            {status.needsPull && status.connected && <p className="text-xs text-orange-600 mt-2 flex items-center gap-1"><AlertCircle className="h-3 w-3" /> Kode lokal tertinggal - perlu pull</p>}
           </CardContent>
         </Card>
       </div>
 
-      {/* Info Box */}
-      <div className="mt-4 max-w-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm">
+      {/* ====== Info Box - Alur Proteksi ====== */}
+      <div className="mt-4 max-w-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-md p-3 text-sm">
         <div className="flex items-start gap-2">
-          <GitBranch className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-          <div className="text-blue-700 dark:text-blue-400">
-            <p className="font-medium">Alur Kerja GitHub</p>
-            <p className="mt-1 text-blue-600 dark:text-blue-500">
-              Sandbox otomatis push ke <strong>dev</strong> → Merge di GitHub ke <strong>main</strong> → Deploy ke Vercel (production).
-              Auto-push berjalan setiap 5 menit untuk mencegah kehilangan data saat sandbox reset.
-            </p>
+          <Shield className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+          <div className="text-emerald-700 dark:text-emerald-400">
+            <p className="font-medium">Alur Proteksi Anti-Reset</p>
+            <div className="mt-2 space-y-1 text-emerald-600 dark:text-emerald-500">
+              <p>1️⃣ Sandbox reset → <strong>Marker sinkronisasi hilang</strong></p>
+              <p>2️⃣ Push ke GitHub → <strong>DIBLOKIR</strong> (kode lama tidak bisa menimpa)</p>
+              <p>3️⃣ Auto-pull → <strong>Kode dipulihkan dari GitHub</strong></p>
+              <p>4️⃣ Setelah sinkron → Push dibuka + auto-push aktif</p>
+              <p>5️⃣ GitHub: merge <strong>dev → main</strong> → Vercel deploy</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Settings Dialog */}
+      {/* ====== Settings ====== */}
       <Dialog open={settingsOpen} onOpenChange={(open) => { if (!saving) setSettingsOpen(open); }}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Pengaturan GitHub</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Pengaturan GitHub</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label className="text-sm font-medium">Branch Tujuan</Label>
               <div className="flex gap-2">
-                {['dev', 'main'].map((b) => (
-                  <Button key={b} variant={branch === b ? 'default' : 'outline'} size="sm" onClick={() => setBranch(b)} className={branch === b ? 'bg-ocean hover:bg-ocean-dark text-white' : ''}>
-                    {b}
-                  </Button>
-                ))}
+                {['dev', 'main'].map((b) => (<Button key={b} variant={branch === b ? 'default' : 'outline'} size="sm" onClick={() => setBranch(b)} className={branch === b ? 'bg-ocean hover:bg-ocean-dark text-white' : ''}>{b}</Button>))}
               </div>
-              <p className="text-xs text-muted-foreground">
-                <strong>dev</strong> = Preview (aman untuk development) · <strong>main</strong> = Production (deploy ke Vercel)
-              </p>
+              <p className="text-xs text-muted-foreground"><strong>dev</strong> = Preview · <strong>main</strong> = Production</p>
             </div>
-
             <div className="flex items-center justify-between rounded-lg border p-3">
-              <div>
-                <Label className="text-sm font-medium">Auto Push ke GitHub</Label>
-                <p className="text-xs text-muted-foreground">Otomatis push setiap 5 menit saat ada perubahan</p>
-              </div>
+              <div><Label className="text-sm font-medium">Auto Push ke GitHub</Label><p className="text-xs text-muted-foreground">Push setiap 5 menit jika sudah sinkron</p></div>
               <Switch checked={autoPush} onCheckedChange={setAutoPush} />
             </div>
-
-            {status.connected && (
-              <div className="flex items-center gap-2 text-sm text-green-600"><CheckCircle2 className="h-4 w-4" /> GitHub Token aktif</div>
-            )}
+            {status.connected && <div className="flex items-center gap-2 text-sm text-green-600"><CheckCircle2 className="h-4 w-4" /> GitHub Token aktif</div>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSettingsOpen(false)} disabled={saving}>Batal</Button>
-            <Button onClick={handleSaveConfig} disabled={saving} className="bg-ocean hover:bg-ocean-dark text-white">
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Simpan
-            </Button>
+            <Button onClick={handleSaveConfig} disabled={saving} className="bg-ocean hover:bg-ocean-dark text-white">{saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Simpan</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

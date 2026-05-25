@@ -18,9 +18,17 @@ export async function GET(req: NextRequest) {
     const kelas_id = searchParams.get('kelas_id');
     const search = searchParams.get('search');
 
-    let sql = `SELECT km.*, u.nama as guru_nama, u.nip as guru_nip, u.foto_profile as guru_foto,
-      j.jam_ke, j.jam_mulai, j.jam_selesai,
-      h.nama_hari, k.nama_kelas, m.nama_mapel, sk.nama_status,
+    let sql = `SELECT km.*,
+      u.nama as guru_nama,
+      u.nip as guru_nip,
+      u.foto_profile as guru_foto,
+      j.jam_ke,
+      j.jam_mulai,
+      j.jam_selesai,
+      h.nama_hari,
+      k.nama_kelas,
+      m.nama_mapel,
+      sk.nama_status,
       km.siswa_absen_json
       FROM kehadiran_mengajar km
       LEFT JOIN users u ON km.guru_id = u.id

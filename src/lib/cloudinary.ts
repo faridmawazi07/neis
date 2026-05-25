@@ -1,15 +1,30 @@
 // Cloudinary utility using signed REST API
 // No external SDK - compatible with Turbopack
 // Uses Web Crypto API for signing (available in Node.js 18+)
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+
+const NEIS_ENV_FILE = join(process.cwd(), '.neis.env');
+
+function getNeisEnvValue(key: string): string {
+  try {
+    if (existsSync(NEIS_ENV_FILE)) {
+      const content = readFileSync(NEIS_ENV_FILE, 'utf-8');
+      const match = content.match(new RegExp(`^${key}=(.+)$`, 'm'));
+      if (match) return match[1].trim();
+    }
+  } catch {}
+  return '';
+}
 
 function getCloudName(): string {
-  return process.env.CLOUDINARY_CLOUD_NAME || '';
+  return process.env.CLOUDINARY_CLOUD_NAME || getNeisEnvValue('CLOUDINARY_CLOUD_NAME') || '';
 }
 function getApiKey(): string {
-  return process.env.CLOUDINARY_API_KEY || '';
+  return process.env.CLOUDINARY_API_KEY || getNeisEnvValue('CLOUDINARY_API_KEY') || '';
 }
 function getApiSecret(): string {
-  return process.env.CLOUDINARY_API_SECRET || '';
+  return process.env.CLOUDINARY_API_SECRET || getNeisEnvValue('CLOUDINARY_API_SECRET') || '';
 }
 
 /**

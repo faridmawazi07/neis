@@ -128,3 +128,28 @@ Stage Summary:
 - Dynamic imports prevent Turbopack compile crashes
 - Server stability: works well with normal browser usage, may crash under rapid concurrent curl requests (resource limitation)
 - All photo uploads (profile + kehadiran) go through Cloudinary when configured
+# NEIS Git Control Fix - Mon May 25 10:41:41 UTC 2026
+
+---
+Task ID: git-control-fix-2
+Agent: Main Orchestrator
+Task: Fix "Simpan ke GitHub" button and sandbox reset workflow
+
+Work Log:
+- Diagnosed 3 root causes for Git Control failures:
+  1. `git push -u origin dev` pushes LOCAL dev branch (outdated), not current HEAD → Fixed: use `git push origin HEAD:dev`
+  2. Cloudinary configured as false because API reads from `process.env` but keys are in `.neis.env` → Fixed: added `getNeisEnvValue()` fallback
+  3. "nothing to commit" error not caught because error message in `e.stdout` not `e.message` → Fixed: check all error fields
+- Rewrote `doPush()` helper function that uses `git push origin HEAD:{targetBranch}` 
+- Updated `cloudinary.ts` to read from `.neis.env` as fallback (survives sandbox resets)
+- Updated `getCloudinaryUsage()` to use Basic Auth (GET method) for Cloudinary Admin API
+- Added `limitedAccess` flag for Cloudinary free tier (Admin API returns permission error)
+- Updated frontend to show "Cloudinary aktif untuk menyimpan foto" for free tier
+- Tested all operations: manual push ✓, auto-push ✓, pull ✓, status ✓
+- All code pushed to GitHub dev branch successfully
+
+Stage Summary:
+- Git Control fully working: push, pull, auto-push all function correctly
+- Cloudinary indicator shows "Terhubung" with "Free Plan" badge
+- Sandbox reset workflow: code in .neis.env survives resets → GitHub token + Cloudinary keys always available
+- Workflow: Sandbox → auto-push to dev → merge dev→main on GitHub → Vercel production deploy
