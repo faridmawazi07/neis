@@ -147,17 +147,18 @@ export function KehadiranPage() {
     }
     autoTable(doc, {
       startY: 28,
-      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Jam Ke', 'Status', 'Hadir', 'Izin/Sakit', 'Alfa']],
+      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Jam Ke', 'Status']],
       body: data.map((d) => [
         d.tanggal,
         d.guru_nama,
         d.nama_kelas,
         d.nama_mapel,
-        d.jam_ke,
-        d.nama_status,
         d.jumlah_hadir,
         d.jumlah_izin_sakit,
         d.jumlah_alfa,
+        d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa),
+        d.jam_ke,
+        d.nama_status,
       ]),
     });
     doc.save('kehadiran-mengajar.pdf');
@@ -165,9 +166,9 @@ export function KehadiranPage() {
 
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
-    const wsData = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Jam Ke', 'Status', 'Hadir', 'Izin/Sakit', 'Alfa', 'Materi']];
+    const wsData = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Jam Ke', 'Status', 'Materi']];
     data.forEach((d) => {
-      wsData.push([d.tanggal, d.guru_nama, d.nama_kelas, d.nama_mapel, d.jam_ke, d.nama_status, d.jumlah_hadir, d.jumlah_izin_sakit, d.jumlah_alfa, d.materi_pembelajaran]);
+      wsData.push([d.tanggal, d.guru_nama, d.nama_kelas, d.nama_mapel, d.jumlah_hadir, d.jumlah_izin_sakit, d.jumlah_alfa, d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa), d.jam_ke, d.nama_status, d.materi_pembelajaran]);
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -278,11 +279,12 @@ export function KehadiranPage() {
                     {!isGuru && <TableHead>Guru</TableHead>}
                     <TableHead>Kelas</TableHead>
                     <TableHead>Mapel</TableHead>
-                    <TableHead>Jam Ke</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead className="text-center">Hadir</TableHead>
                     <TableHead className="text-center">I/S</TableHead>
                     <TableHead className="text-center">Alfa</TableHead>
+                    <TableHead className="text-center">Jumlah</TableHead>
+                    <TableHead>Jam Ke</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Foto</TableHead>
                     {(canEdit || canDelete) && <TableHead>Aksi</TableHead>}
                   </TableRow>
@@ -308,11 +310,12 @@ export function KehadiranPage() {
                       )}
                       <TableCell>{d.nama_kelas}</TableCell>
                       <TableCell>{d.nama_mapel}</TableCell>
-                      <TableCell>{d.jam_ke}</TableCell>
-                      <TableCell>{d.nama_status}</TableCell>
                       <TableCell className="text-center">{d.jumlah_hadir}</TableCell>
                       <TableCell className="text-center">{d.jumlah_izin_sakit}</TableCell>
                       <TableCell className="text-center">{d.jumlah_alfa}</TableCell>
+                      <TableCell className="text-center">{d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa)}</TableCell>
+                      <TableCell>{d.jam_ke}</TableCell>
+                      <TableCell>{d.nama_status}</TableCell>
                       <TableCell>
                         {d.foto_mengajar && (
                           <button type="button" onClick={() => { setImageModalSrc(d.foto_mengajar); setImageModalOpen(true); }} className="hover:ring-2 hover:ring-ocean rounded transition-all">
