@@ -160,8 +160,8 @@ async function doPush(gitToken: string, targetBranch: string, commitPrefix: stri
       const ts = new Date().toISOString();
       await execAsync(`git commit -m "${commitPrefix} - ${ts}"`, { cwd: PROJECT_DIR });
     } catch (e: any) {
-      const msg = e.message || '';
-      if (msg.includes('nothing to commit') || msg.includes('no changes added')) {
+      const msg = (e.message || '') + (e.stdout || '') + (e.stderr || '');
+      if (msg.includes('nothing to commit') || msg.includes('no changes added') || msg.includes('nothing added')) {
         nothingNew = true;
       } else {
         throw e;
