@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { turso } from '@/lib/turso';
 import { verifyToken } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
+import { uploadImage, deleteFromCloudinary } from '@/lib/cloudinary';
 
 export async function GET(req: NextRequest) {
   try {
@@ -84,12 +85,15 @@ export async function POST(req: NextRequest) {
     const status_kehadiran_id = formData.get('status_kehadiran_id') as string;
     const tanggal = formData.get('tanggal') as string;
     const materi_pembelajaran = (formData.get('materi_pembelajaran') as string) || '';
-    const foto_mengajar = (formData.get('foto_mengajar') as string) || null;
+    const foto_mengajar_raw = (formData.get('foto_mengajar') as string) || null;
     const jumlah_hadir = parseInt(formData.get('jumlah_hadir') as string) || 0;
     const jumlah_izin_sakit = parseInt(formData.get('jumlah_izin_sakit') as string) || 0;
     const jumlah_alfa = parseInt(formData.get('jumlah_alfa') as string) || 0;
     const jumlah_siswa_total = parseInt(formData.get('jumlah_siswa_total') as string) || 0;
     const siswa_absen_json = (formData.get('siswa_absen_json') as string) || '{}';
+
+    // Upload foto_mengajar to Cloudinary
+    const foto_mengajar = foto_mengajar_raw ? await uploadImage(foto_mengajar_raw, 'neis/kehadiran') : null;
 
     // Determine guru_id
     const guru_id = payload.role === 'admin' ? (formData.get('guru_id') as string) : payload.userId;
@@ -172,7 +176,7 @@ export async function PUT(req: NextRequest) {
     const status_kehadiran_id = formData.get('status_kehadiran_id') as string;
     const tanggal = formData.get('tanggal') as string;
     const materi_pembelajaran = (formData.get('materi_pembelajaran') as string) || '';
-    const foto_mengajar = (formData.get('foto_mengajar') as string) || null;
+    const foto_mengajar_raw = (formData.get('foto_mengajar') as string) || null;
     const jumlah_hadir = parseInt(formData.get('jumlah_hadir') as string) || 0;
     const jumlah_izin_sakit = parseInt(formData.get('jumlah_izin_sakit') as string) || 0;
     const jumlah_alfa = parseInt(formData.get('jumlah_alfa') as string) || 0;
@@ -202,6 +206,12 @@ export async function PUT(req: NextRequest) {
       if (dayOfWeek === 0 || dayOfWeek === 6 || currentTime < 360 || currentTime > 1200) {
         return NextResponse.json({ error: 'Kehadiran hanya bisa diedit pada hari kerja pukul 06:00-20:00 WIB' }, { status: 403 });
       }
+    }
+
+    // Upload foto_mengajar to Cloudinary if provided
+    let foto_mengajar: string | null = null;
+    if (foto_mengajar_raw) {
+      foto_mengajar = await uploadImage(foto_mengajar_raw, 'neis/kehadiran');
     }
 
     // Build update query - only update provided fields

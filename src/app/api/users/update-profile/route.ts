@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { turso } from '@/lib/turso';
 import { verifyToken, hashPassword } from '@/lib/auth';
+import { uploadImage } from '@/lib/cloudinary';
 
 export async function POST(req: NextRequest) {
   try {
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
       args.push(tanggal_lahir || null);
     }
 
-    // Handle photo upload - store as base64 data URL
+    // Handle photo upload - upload to Cloudinary, fallback to base64
     if (foto_profile && typeof foto_profile !== 'string') {
       const bytes = await foto_profile.arrayBuffer();
       const buffer = Buffer.from(bytes);
@@ -101,8 +102,17 @@ export async function POST(req: NextRequest) {
       const mimeType = foto_profile.type || 'image/jpeg';
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
+      // Try uploading to Cloudinary
+      const uploadedUrl = await uploadImage(dataUrl, 'neis/profile', `profile_${id}`);
+
       updates.push('foto_profile = ?');
-      args.push(dataUrl);
+      args.push(uploadedUrl);
+    } else if (typeof foto_profile === 'string' && foto_profile.startsWith('data:')) {
+      // Base64 string from profile-page - upload to Cloudinary
+      const uploadedUrl = await uploadImage(foto_profile, 'neis/profile', `profile_${id}`);
+
+      updates.push('foto_profile = ?');
+      args.push(uploadedUrl);
     } else if (remove_photo === 'true') {
       // Admin explicitly removes photo
       updates.push('foto_profile = ?');

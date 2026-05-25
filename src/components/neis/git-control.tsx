@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Upload, Download, Loader2, Clock, CheckCircle2, XCircle, MinusCircle, RefreshCw, AlertTriangle, ShieldAlert, ArrowDownToLine } from 'lucide-react';
+import { Upload, Download, Loader2, Clock, CheckCircle2, XCircle, MinusCircle, RefreshCw, AlertTriangle, ShieldAlert, ArrowDownToLine, Cloud, Image } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface AutoPushStatus {
@@ -28,6 +28,7 @@ export function GitControlPage() {
   const [autoStatus, setAutoStatus] = useState<AutoPushStatus | null>(null);
   const [toggling, setToggling] = useState(false);
   const [changingInterval, setChangingInterval] = useState(false);
+  const [cloudinaryStatus, setCloudinaryStatus] = useState<{ configured: boolean; cloudName: string | null } | null>(null);
 
   const fetchAutoStatus = useCallback(async () => {
     try {
@@ -47,6 +48,20 @@ export function GitControlPage() {
     const interval = setInterval(fetchAutoStatus, 30000);
     return () => clearInterval(interval);
   }, [fetchAutoStatus]);
+
+  // Fetch Cloudinary status
+  useEffect(() => {
+    const fetchCloudinary = async () => {
+      try {
+        const res = await fetch('/api/upload', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          setCloudinaryStatus(data);
+        }
+      } catch {}
+    };
+    fetchCloudinary();
+  }, []);
 
   const handlePush = async () => {
     setPushing(true);
@@ -309,6 +324,58 @@ export function GitControlPage() {
               </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Cloudinary Storage Status */}
+      <Card className={`mb-4 border-l-4 ${cloudinaryStatus?.configured ? 'border-l-green-500' : 'border-l-amber-500'}`}>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Cloud className={`h-5 w-5 ${cloudinaryStatus?.configured ? 'text-green-500' : 'text-amber-500'}`} />
+            Cloud Storage (Cloudinary)
+            {cloudinaryStatus?.configured ? (
+              <Badge className="text-xs bg-green-100 text-green-700 hover:bg-green-100">Terhubung</Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Belum Dikonfigurasi</Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {cloudinaryStatus?.configured ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Foto profil dan foto kehadiran disimpan di Cloudinary (<strong>{cloudinaryStatus.cloudName}</strong>). Database tetap ringan tanpa base64.
+              </p>
+              <div className="flex items-center gap-2 text-sm">
+                <Image className="h-4 w-4 text-green-500" alt="" />
+                <span className="text-green-600 font-medium">Penyimpanan foto aktif (cloud)</span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Foto saat ini disimpan sebagai <strong>base64 di database</strong> — ini membuat database bengkak dan lambat.
+              </p>
+              <div className="flex items-center gap-2 text-sm">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <span className="text-amber-600 font-medium">Tidak efisien untuk production</span>
+              </div>
+              <div className="mt-2 p-3 bg-muted rounded-md text-xs space-y-1.5">
+                <p className="font-medium text-foreground">Cara mengaktifkan Cloudinary:</p>
+                <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                  <li>Daftar gratis di <strong>cloudinary.com</strong></li>
+                  <li>Dapatkan <code>Cloud Name</code>, <code>API Key</code>, <code>API Secret</code></li>
+                  <li>Tambahkan ke file <code>.neis.env</code>:</li>
+                </ol>
+                <pre className="bg-background p-2 rounded mt-1 text-[11px] overflow-x-auto">
+{`CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret`}
+                </pre>
+                <p className="text-muted-foreground">Free tier: 25 GB storage, 25 GB/bulan bandwidth</p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

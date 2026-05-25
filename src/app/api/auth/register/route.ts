@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { turso } from '@/lib/turso';
 import { hashPassword, parseNIP } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
+import { uploadImage } from '@/lib/cloudinary';
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,10 +38,13 @@ export async function POST(req: NextRequest) {
     const hashedPassword = await hashPassword(password);
     const id = uuidv4();
 
+    // Upload foto_profile to Cloudinary (fallback to base64)
+    const fotoUrl = await uploadImage(foto_profile, 'neis/profile', `profile_${id}`);
+
     await turso.execute({
       sql: `INSERT INTO users (id, nip, nama, password, role, status_persetujuan, foto_profile, jenis_kelamin, tanggal_lahir) 
             VALUES (?, ?, ?, ?, NULL, 'pending', ?, ?, ?)`,
-      args: [id, nip, nama, hashedPassword, foto_profile, parsed?.jenisKelamin || null, parsed?.tanggalLahir || null],
+      args: [id, nip, nama, hashedPassword, fotoUrl, parsed?.jenisKelamin || null, parsed?.tanggalLahir || null],
     });
 
     return NextResponse.json({ message: 'Pendaftaran berhasil! Menunggu persetujuan admin.' });
