@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Search, CalendarIcon, Plus, Download, FileSpreadsheet, Edit, Trash2, Eye, FileText } from 'lucide-react';
+import { Search, CalendarIcon, Plus, Download, FileSpreadsheet, Edit, Trash2, Eye, FileText, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +27,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export function KehadiranPage() {
   const { user } = useAuthStore();
@@ -41,6 +42,10 @@ export function KehadiranPage() {
   const [tanggalGuru, setTanggalGuru] = useState<Date>(new Date());
   const [tanggalFrom, setTanggalFrom] = useState<Date>(new Date());
   const [tanggalTo, setTanggalTo] = useState<Date>(new Date());
+
+  // Kelas filter
+  const [kelasList, setKelasList] = useState<any[]>([]);
+  const [selectedKelasId, setSelectedKelasId] = useState<string>('all');
 
   // Form
   const [formOpen, setFormOpen] = useState(false);
@@ -66,6 +71,23 @@ export function KehadiranPage() {
   const canEdit = isGuru || role === 'admin';
   const canDelete = role === 'admin';
 
+  // Fetch kelas list
+  const fetchKelas = useCallback(async () => {
+    try {
+      const res = await fetch('/api/kelas', { credentials: 'include' });
+      if (res.ok) {
+        const result = await res.json();
+        setKelasList(result.data || []);
+      }
+    } catch (err) {
+      console.error('Fetch kelas error:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchKelas();
+  }, [fetchKelas]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -75,6 +97,9 @@ export function KehadiranPage() {
       } else {
         url += `tanggal_from=${format(tanggalFrom, 'yyyy-MM-dd')}&tanggal_to=${format(tanggalTo, 'yyyy-MM-dd')}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
+      }
+      if (selectedKelasId && selectedKelasId !== 'all') {
+        url += `&kelas_id=${selectedKelasId}`;
       }
       const res = await fetch(url, { credentials: 'include' });
       if (res.ok) {
@@ -86,7 +111,7 @@ export function KehadiranPage() {
     } finally {
       setLoading(false);
     }
-  }, [isGuru, user?.id, tanggalGuru, tanggalFrom, tanggalTo, search]);
+  }, [isGuru, user?.id, tanggalGuru, tanggalFrom, tanggalTo, search, selectedKelasId]);
 
   const checkHoliday = useCallback(async () => {
     if (!isGuru) return;
@@ -214,54 +239,68 @@ export function KehadiranPage() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            {isGuru ? (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1 w-fit">
-                    <CalendarIcon className="h-3.5 w-3.5" />
-                    {format(tanggalGuru, 'dd MMM yyyy', { locale: idLocale })}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={tanggalGuru} onSelect={(d) => d && setTanggalGuru(d)} />
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              {isGuru ? (
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1">
+                    <Button variant="outline" size="sm" className="gap-1 w-fit">
                       <CalendarIcon className="h-3.5 w-3.5" />
-                      Dari: {format(tanggalFrom, 'dd MMM yyyy')}
+                      {format(tanggalGuru, 'dd MMM yyyy', { locale: idLocale })}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={tanggalFrom} onSelect={(d) => d && setTanggalFrom(d)} />
+                    <Calendar mode="single" selected={tanggalGuru} onSelect={(d) => d && setTanggalGuru(d)} />
                   </PopoverContent>
                 </Popover>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1">
-                      <CalendarIcon className="h-3.5 w-3.5" />
-                      Sampai: {format(tanggalTo, 'dd MMM yyyy')}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={tanggalTo} onSelect={(d) => d && setTanggalTo(d)} />
-                  </PopoverContent>
-                </Popover>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Cari guru..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9 w-48"
-                    size={20}
-                  />
-                </div>
-              </div>
-            )}
+              ) : (
+                <>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1">
+                        <CalendarIcon className="h-3.5 w-3.5" />
+                        Dari: {format(tanggalFrom, 'dd MMM yyyy')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={tanggalFrom} onSelect={(d) => d && setTanggalFrom(d)} />
+                    </PopoverContent>
+                  </Popover>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1">
+                        <CalendarIcon className="h-3.5 w-3.5" />
+                        Sampai: {format(tanggalTo, 'dd MMM yyyy')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={tanggalTo} onSelect={(d) => d && setTanggalTo(d)} />
+                    </PopoverContent>
+                  </Popover>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Cari guru..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9 w-48"
+                      size={20}
+                    />
+                  </div>
+                </>
+              )}
+              <Select value={selectedKelasId} onValueChange={setSelectedKelasId}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <Filter className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                  <SelectValue placeholder="Semua Kelas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kelas</SelectItem>
+                  {kelasList.map((k) => (
+                    <SelectItem key={k.id} value={k.id}>{k.nama_kelas}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
