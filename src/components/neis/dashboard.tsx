@@ -350,12 +350,14 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
               </PopoverContent>
             </Popover>
             <div className="flex items-center gap-1 text-xs">
-              <button
-                className={`flex items-center gap-1 px-2 py-1 rounded ${jadwalFilter === 'all' ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium' : 'hover:bg-accent'}`}
-                onClick={() => setJadwalFilter('all')}
-              >
-                <List className="h-3 w-3" /> <span>Tampilkan Semua</span>
-              </button>
+              {jadwalFilter !== 'all' && (
+                <button
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-300 dark:hover:bg-slate-600"
+                  onClick={() => setJadwalFilter('all')}
+                >
+                  <List className="h-3 w-3" /> <span>Tampilkan Semua</span>
+                </button>
+              )}
               <button
                 className={`flex items-center gap-1 px-2 py-1 rounded ${jadwalFilter === 'sudah' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400 font-medium' : 'hover:bg-accent'}`}
                 onClick={() => setJadwalFilter('sudah')}
