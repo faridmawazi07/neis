@@ -18,6 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Search, UserCheck, Trash2, Trash2Icon, Pencil, Upload, X, Eye, Camera, Image as ImageIcon, SwitchCamera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/neis/pagination-bar';
 import { ImageModal } from './image-modal';
 
 interface DataPegawaiProps {
@@ -50,6 +52,11 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
   const [imageSrc, setImageSrc] = useState('');
   const [imageAlt, setImageAlt] = useState('');
   const [imageOpen, setImageOpen] = useState(false);
+
+  const dataPagination = usePagination(dataList.length);
+  const pendingPagination = usePagination(pendingList.length);
+
+  useEffect(() => { dataPagination.setCurrentPage(1); pendingPagination.setCurrentPage(1); }, [search]);
 
   // Edit modal
   const [editModal, setEditModal] = useState<any>(null);
@@ -161,15 +168,23 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === dataList.length) {
-      setSelectedIds(new Set());
+    const pageDataList = dataPagination.paginatedData(dataList);
+    const pageIds = pageDataList.map((d: any) => d.id);
+    const allPageSelected = pageIds.every((id) => selectedIds.has(id));
+    if (allPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        pageIds.forEach((id) => next.delete(id));
+        return next;
+      });
     } else {
-      setSelectedIds(new Set(dataList.map((d: any) => d.id)));
+      setSelectedIds((prev) => new Set([...prev, ...pageIds]));
     }
   };
 
-  const allSelected = dataList.length > 0 && selectedIds.size === dataList.length;
-  const someSelected = selectedIds.size > 0 && !allSelected;
+  const pageDataList = dataPagination.paginatedData(dataList);
+  const allSelected = pageDataList.length > 0 && pageDataList.every((d: any) => selectedIds.has(d.id));
+  const someSelected = pageDataList.some((d: any) => selectedIds.has(d.id)) && !allSelected;
 
   // Edit handlers
   const openEditModal = (d: any) => {
@@ -388,7 +403,7 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
           <Card><CardContent className="p-0">
             {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
             dataList.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p> :
-            <div className="overflow-x-auto"><Table>
+            (<><div className="overflow-x-auto"><Table>
               <TableHeader><TableRow>
                 {role === 'admin' && (
                   <TableHead className="w-10">
@@ -404,7 +419,7 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                 <TableHead>Foto</TableHead><TableHead>NIP</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>JK</TableHead><TableHead>Tgl Lahir</TableHead>
                 {role === 'admin' && <TableHead>Aksi</TableHead>}
               </TableRow></TableHeader>
-              <TableBody>{dataList.map((d: any) => (
+              <TableBody>{dataPagination.paginatedData(dataList).map((d: any) => (
                 <TableRow key={d.id} className={selectedIds.has(d.id) ? 'bg-muted/50' : ''}>
                   {role === 'admin' && (
                     <TableCell>
@@ -434,7 +449,18 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                   )}
                 </TableRow>
               ))}</TableBody>
-            </Table></div>}
+            </Table></div>
+            <PaginationBar
+              pageSize={dataPagination.pageSize}
+              onPageSizeChange={dataPagination.setPageSize}
+              currentPage={dataPagination.currentPage}
+              totalPages={dataPagination.totalPages}
+              totalItems={dataList.length}
+              pageStart={dataPagination.pageStart}
+              pageEnd={dataPagination.pageEnd}
+              onPageChange={dataPagination.setCurrentPage}
+            />
+            </>)}
           </CardContent></Card>
         </TabsContent>
 
@@ -442,11 +468,11 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
           <Card><CardContent className="p-0">
             {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
             pendingList.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Tidak ada pengguna yang menunggu persetujuan</p> :
-            <div className="overflow-x-auto"><Table>
+            (<><div className="overflow-x-auto"><Table>
               <TableHeader><TableRow>
                 <TableHead>Foto</TableHead><TableHead>NIP</TableHead><TableHead>Nama</TableHead><TableHead>Aksi</TableHead>
               </TableRow></TableHeader>
-              <TableBody>{pendingList.map((d: any) => (
+              <TableBody>{pendingPagination.paginatedData(pendingList).map((d: any) => (
                 <TableRow key={d.id}>
                   <TableCell>{renderFoto(d)}</TableCell>
                   <TableCell className="text-xs">{d.nip || '-'}</TableCell>
@@ -463,7 +489,18 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                   </TableCell>
                 </TableRow>
               ))}</TableBody>
-            </Table></div>}
+            </Table></div>
+            <PaginationBar
+              pageSize={pendingPagination.pageSize}
+              onPageSizeChange={pendingPagination.setPageSize}
+              currentPage={pendingPagination.currentPage}
+              totalPages={pendingPagination.totalPages}
+              totalItems={pendingList.length}
+              pageStart={pendingPagination.pageStart}
+              pageEnd={pendingPagination.pageEnd}
+              onPageChange={pendingPagination.setCurrentPage}
+            />
+            </>)}
           </CardContent></Card>
         </TabsContent>
       </Tabs>

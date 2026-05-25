@@ -23,6 +23,8 @@ import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { PageName } from './app-layout';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/neis/pagination-bar';
 
 interface DashboardProps {
   onNavigate: (page: PageName) => void;
@@ -95,6 +97,10 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
     if (jadwalFilter === 'sudah') return Number(j.sudah_mengajar) > 0;
     return Number(j.sudah_mengajar) === 0;
   });
+
+  const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(filteredJadwal.length);
+
+  useEffect(() => { setCurrentPage(1); }, [jadwalFilter]);
 
   // Admin Widgets
   const renderAdminWidgets = () => (
@@ -384,6 +390,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
         ) : filteredJadwal.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">Tidak ada jadwal untuk hari ini</p>
         ) : (
+        <>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -398,9 +405,9 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredJadwal.map((j: any, i: number) => (
+                {paginatedData(filteredJadwal).map((j: any, i: number) => (
                   <TableRow key={i}>
-                    <TableCell>{i + 1}</TableCell>
+                    <TableCell>{(currentPage - 1) * pageSize + i + 1}</TableCell>
                     {role !== 'guru' && <TableCell>{j.guru_nama}</TableCell>}
                     <TableCell>{j.nama_kelas}</TableCell>
                     <TableCell>{j.nama_mapel}</TableCell>
@@ -418,6 +425,17 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
               </TableBody>
             </Table>
           </div>
+          <PaginationBar
+            pageSize={pageSize}
+            onPageSizeChange={setPageSize}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredJadwal.length}
+            pageStart={pageStart}
+            pageEnd={pageEnd}
+            onPageChange={setCurrentPage}
+          />
+        </>
         )}
       </CardContent>
     </Card>

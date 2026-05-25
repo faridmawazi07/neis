@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/select';
 import { Plus, Edit, Trash2, Trash2Icon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/neis/pagination-bar';
 
 export function JadwalPage() {
   const { user } = useAuthStore();
@@ -52,6 +54,13 @@ export function JadwalPage() {
   // Bulk selection (admin & guru)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  // Pagination
+  const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(data.length);
+  const pageData = paginatedData(data);
+
+  // Reset page when filter changes
+  useEffect(() => { setCurrentPage(1); }, [filterHariId]);
 
   const isGuru = role === 'guru';
   const isAdmin = role === 'admin';
@@ -251,15 +260,21 @@ export function JadwalPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === data.length) {
-      setSelectedIds(new Set());
+    const pageIds = pageData.map((d) => d.id);
+    const allPageSelected = pageIds.every((id) => selectedIds.has(id));
+    if (allPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        pageIds.forEach((id) => next.delete(id));
+        return next;
+      });
     } else {
-      setSelectedIds(new Set(data.map((d) => d.id)));
+      setSelectedIds((prev) => new Set([...prev, ...pageIds]));
     }
   };
 
-  const allSelected = data.length > 0 && selectedIds.size === data.length;
-  const someSelected = selectedIds.size > 0 && !allSelected;
+  const allSelected = pageData.length > 0 && pageData.every((d) => selectedIds.has(d.id));
+  const someSelected = pageData.some((d) => selectedIds.has(d.id)) && !allSelected;
 
   return (
     <div>
@@ -306,7 +321,7 @@ export function JadwalPage() {
             </div>
           ) : data.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">Belum ada jadwal</p>
-          ) : (
+          ) : (<>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -333,7 +348,7 @@ export function JadwalPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.map((d) => (
+                  {pageData.map((d) => (
                     <TableRow key={d.id} className={selectedIds.has(d.id) ? 'bg-muted/50' : ''}>
                       {(isAdmin || isGuru) && (
                         <TableCell>
@@ -369,7 +384,17 @@ export function JadwalPage() {
                 </TableBody>
               </Table>
             </div>
-          )}
+            <PaginationBar
+              pageSize={pageSize}
+              onPageSizeChange={setPageSize}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={data.length}
+              pageStart={pageStart}
+              pageEnd={pageEnd}
+              onPageChange={setCurrentPage}
+            />
+          </>)}
         </CardContent>
       </Card>
 

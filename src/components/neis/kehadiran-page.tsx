@@ -29,6 +29,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/neis/pagination-bar';
 
 export function KehadiranPage() {
   const { user } = useAuthStore();
@@ -71,6 +73,11 @@ export function KehadiranPage() {
 
   // Absen (I/S & Alfa) names popup
   const [absenPopup, setAbsenPopup] = useState<{ type: string; names: string[] } | null>(null);
+
+  // Pagination
+  const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(data.length);
+
+  useEffect(() => { setCurrentPage(1); }, [tanggalFrom, tanggalTo, search, selectedKelasId]);
 
   // Holiday check
   const [isHoliday, setIsHoliday] = useState(false);
@@ -205,10 +212,17 @@ export function KehadiranPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === data.length) {
-      setSelectedIds(new Set());
+    const pageData = paginatedData(data);
+    const pageIds = pageData.map((d) => d.id);
+    const allPageSelected = pageIds.every((id) => selectedIds.has(id));
+    if (allPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        pageIds.forEach((id) => next.delete(id));
+        return next;
+      });
     } else {
-      setSelectedIds(new Set(data.map((d) => d.id)));
+      setSelectedIds((prev) => new Set([...prev, ...pageIds]));
     }
   };
 
@@ -359,6 +373,7 @@ export function KehadiranPage() {
           ) : data.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">Belum ada data kehadiran</p>
           ) : (
+          <>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -366,7 +381,7 @@ export function KehadiranPage() {
                     {canDelete && (
                       <TableHead className="w-[40px]">
                         <Checkbox
-                          checked={data.length > 0 && selectedIds.size === data.length}
+                          checked={data.length > 0 && paginatedData(data).length > 0 && paginatedData(data).every((d) => selectedIds.has(d.id))}
                           onCheckedChange={toggleSelectAll}
                           aria-label="Pilih semua"
                         />
@@ -389,7 +404,7 @@ export function KehadiranPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.map((d) => (
+                  {paginatedData(data).map((d) => (
                     <TableRow key={d.id} className={selectedIds.has(d.id) ? 'bg-muted/50' : ''}>
                       {canDelete && (
                         <TableCell>
@@ -517,7 +532,17 @@ export function KehadiranPage() {
                 </TableBody>
               </Table>
             </div>
-          )}
+            <PaginationBar
+              pageSize={pageSize}
+              onPageSizeChange={setPageSize}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={data.length}
+              pageStart={pageStart}
+              pageEnd={pageEnd}
+              onPageChange={setCurrentPage}
+            />
+          </>)}
         </CardContent>
       </Card>
 
