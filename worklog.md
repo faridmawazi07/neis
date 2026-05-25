@@ -128,3 +128,4 @@ Stage Summary:
 - Dynamic imports prevent Turbopack compile crashes
 - Server stability: works well with normal browser usage, may crash under rapid concurrent curl requests (resource limitation)
 - All photo uploads (profile + kehadiran) go through Cloudinary when configured
+# NEIS Git Control Fix - Mon May 25 10:41:41 UTC 2026
