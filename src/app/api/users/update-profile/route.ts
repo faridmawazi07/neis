@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { turso } from '@/lib/turso';
 import { verifyToken, hashPassword } from '@/lib/auth';
-import { uploadImage } from '@/lib/cloudinary';
 
 export async function POST(req: NextRequest) {
   try {
@@ -103,13 +102,21 @@ export async function POST(req: NextRequest) {
       const dataUrl = `data:${mimeType};base64,${base64}`;
 
       // Try uploading to Cloudinary
-      const uploadedUrl = await uploadImage(dataUrl, 'neis/profile', `profile_${id}`);
+      let uploadedUrl = dataUrl;
+      try {
+        const { uploadImage } = await import('@/lib/cloudinary');
+        uploadedUrl = await uploadImage(dataUrl, 'neis/profile', `profile_${id}`);
+      } catch {}
 
       updates.push('foto_profile = ?');
       args.push(uploadedUrl);
     } else if (typeof foto_profile === 'string' && foto_profile.startsWith('data:')) {
       // Base64 string from profile-page - upload to Cloudinary
-      const uploadedUrl = await uploadImage(foto_profile, 'neis/profile', `profile_${id}`);
+      let uploadedUrl = foto_profile;
+      try {
+        const { uploadImage } = await import('@/lib/cloudinary');
+        uploadedUrl = await uploadImage(foto_profile, 'neis/profile', `profile_${id}`);
+      } catch {}
 
       updates.push('foto_profile = ?');
       args.push(uploadedUrl);

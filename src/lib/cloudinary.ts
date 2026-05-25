@@ -1,57 +1,37 @@
-import { v2 as cloudinary } from 'cloudinary';
-import fs from 'fs';
+// Cloudinary utility using signed REST API
+// No external SDK - compatible with Turbopack
+// Uses Web Crypto API for signing (available in Node.js 18+)
 
-// Load config from .neis.env file (survives sandbox reset)
-function loadCloudinaryConfig() {
-  try {
-    const envPath = '/home/z/my-project/.neis.env';
-    if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, 'utf-8');
-      const lines = content.split('\n');
-      for (const line of lines) {
-        const match = line.match(/^CLOUDINARY_(\w+)=(.*)$/);
-        if (match) {
-          const [, key, value] = match;
-          if (!process.env[`CLOUDINARY_${key}`]) {
-            process.env[`CLOUDINARY_${key}`] = value.trim();
-          }
-        }
-      }
-    }
-  } catch (e) {
-    // Ignore errors, will fail gracefully
-  }
+function getCloudName(): string {
+  return process.env.CLOUDINARY_CLOUD_NAME || '';
 }
-
-loadCloudinaryConfig();
-
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-  secure: true,
-});
-
-export default cloudinary;
+function getApiKey(): string {
+  return process.env.CLOUDINARY_API_KEY || '';
+}
+function getApiSecret(): string {
+  return process.env.CLOUDINARY_API_SECRET || '';
+}
 
 /**
  * Check if Cloudinary is configured
  */
 export function isCloudinaryConfigured(): boolean {
-  return !!(
-    process.env.CLOUDINARY_CLOUD_NAME &&
-    process.env.CLOUDINARY_API_KEY &&
-    process.env.CLOUDINARY_API_SECRET
-  );
+  return !!(getCloudName() && getApiKey() && getApiSecret());
 }
 
 /**
- * Upload image to Cloudinary
- * @param dataUrl - Base64 data URL (data:image/...;base64,...)
- * @param folder - Cloudinary folder (e.g., 'neis/profile' or 'neis/kehadiran')
- * @param publicId - Optional custom public ID
- * @returns Cloudinary secure URL
+ * Generate SHA1 signature using Web Crypto API
+ */
+async function sha1(message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Upload image to Cloudinary using signed REST API
  */
 export async function uploadToCloudinary(
   dataUrl: string,
@@ -59,44 +39,80 @@ export async function uploadToCloudinary(
   publicId?: string
 ): Promise<string> {
   if (!isCloudinaryConfigured()) {
-    throw new Error('Cloudinary belum dikonfigurasi. Tambahkan CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, dan CLOUDINARY_API_SECRET di .neis.env');
+    throw new Error('Cloudinary belum dikonfigurasi');
   }
 
-  const result = await cloudinary.uploader.upload(dataUrl, {
-    folder,
-    public_id: publicId,
-    transformation: [
-      { quality: 'auto:good' },
-      { fetch_format: 'auto' },
-    ],
-    overwrite: true,
-    resource_type: 'image',
-  });
+  const cloudName = getCloudName();
+  const apiKey = getApiKey();
+  const apiSecret = getApiSecret();
+  const timestamp = Math.floor(Date.now() / 1000);
 
-  return result.secure_url;
+  // Build signature string
+  let sigParams = `folder=${folder}&timestamp=${timestamp}`;
+  if (publicId) sigParams += `&public_id=${publicId}`;
+  sigParams += apiSecret;
+
+  const signature = await sha1(sigParams);
+
+  // Build form data
+  const formData = new FormData();
+  formData.append('file', dataUrl);
+  formData.append('api_key', apiKey);
+  formData.append('timestamp', String(timestamp));
+  formData.append('folder', folder);
+  formData.append('signature', signature);
+  if (publicId) {
+    formData.append('public_id', publicId);
+  }
+
+  // Upload via REST API
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    { method: 'POST', body: formData }
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `Upload gagal: ${response.status}`);
+  }
+
+  const result = await response.json();
+  return result.secure_url as string;
 }
 
 /**
  * Delete image from Cloudinary by URL
- * @param imageUrl - Cloudinary URL to delete
  */
 export async function deleteFromCloudinary(imageUrl: string): Promise<void> {
   if (!isCloudinaryConfigured()) return;
-  if (!imageUrl.includes('cloudinary.com')) return; // Not a Cloudinary URL
+  if (!imageUrl.includes('cloudinary.com')) return;
 
   try {
-    // Extract public_id from URL
-    // URL format: https://res.cloudinary.com/{cloud}/image/upload/v{version}/{folder}/{public_id}.{ext}
+    const cloudName = getCloudName();
+    const apiKey = getApiKey();
+    const apiSecret = getApiSecret();
+
     const urlParts = imageUrl.split('/upload/');
     if (urlParts.length < 2) return;
 
     const pathPart = urlParts[1];
-    // Remove version prefix (v1234567890/)
     const withoutVersion = pathPart.replace(/^v\d+\//, '');
-    // Remove file extension
     const publicId = withoutVersion.replace(/\.[^.]+$/, '');
 
-    await cloudinary.uploader.destroy(publicId);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const sigParams = `public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
+    const signature = await sha1(sigParams);
+
+    const formData = new FormData();
+    formData.append('public_id', publicId);
+    formData.append('api_key', apiKey);
+    formData.append('timestamp', String(timestamp));
+    formData.append('signature', signature);
+
+    await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/destroy`,
+      { method: 'POST', body: formData }
+    );
   } catch (e) {
     console.error('Failed to delete from Cloudinary:', e);
   }
@@ -104,7 +120,6 @@ export async function deleteFromCloudinary(imageUrl: string): Promise<void> {
 
 /**
  * Upload image to Cloudinary with fallback to base64 data URL
- * If Cloudinary is not configured, returns the original data URL
  */
 export async function uploadImage(
   dataUrl: string,
@@ -113,10 +128,10 @@ export async function uploadImage(
 ): Promise<string> {
   if (!dataUrl) return dataUrl;
 
-  // Already a Cloudinary URL - no need to re-upload
+  // Already a Cloudinary URL
   if (dataUrl.includes('cloudinary.com')) return dataUrl;
 
-  // Not a data URL - return as is
+  // Not a data URL
   if (!dataUrl.startsWith('data:')) return dataUrl;
 
   // Try Cloudinary upload
@@ -125,10 +140,9 @@ export async function uploadImage(
       return await uploadToCloudinary(dataUrl, folder, publicId);
     } catch (e) {
       console.error('Cloudinary upload failed, falling back to base64:', e);
-      return dataUrl; // Fallback to base64
+      return dataUrl;
     }
   }
 
-  // Cloudinary not configured - keep as base64
   return dataUrl;
 }

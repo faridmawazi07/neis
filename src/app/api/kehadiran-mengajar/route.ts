@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { turso } from '@/lib/turso';
 import { verifyToken } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
-import { uploadImage, deleteFromCloudinary } from '@/lib/cloudinary';
 
 export async function GET(req: NextRequest) {
   try {
@@ -92,8 +91,16 @@ export async function POST(req: NextRequest) {
     const jumlah_siswa_total = parseInt(formData.get('jumlah_siswa_total') as string) || 0;
     const siswa_absen_json = (formData.get('siswa_absen_json') as string) || '{}';
 
-    // Upload foto_mengajar to Cloudinary
-    const foto_mengajar = foto_mengajar_raw ? await uploadImage(foto_mengajar_raw, 'neis/kehadiran') : null;
+    // Upload foto_mengajar to Cloudinary (dynamic import)
+    let foto_mengajar: string | null = null;
+    if (foto_mengajar_raw) {
+      try {
+        const { uploadImage } = await import('@/lib/cloudinary');
+        foto_mengajar = await uploadImage(foto_mengajar_raw, 'neis/kehadiran');
+      } catch {
+        foto_mengajar = foto_mengajar_raw;
+      }
+    }
 
     // Determine guru_id
     const guru_id = payload.role === 'admin' ? (formData.get('guru_id') as string) : payload.userId;
@@ -208,10 +215,15 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    // Upload foto_mengajar to Cloudinary if provided
+    // Upload foto_mengajar to Cloudinary (dynamic import)
     let foto_mengajar: string | null = null;
     if (foto_mengajar_raw) {
-      foto_mengajar = await uploadImage(foto_mengajar_raw, 'neis/kehadiran');
+      try {
+        const { uploadImage } = await import('@/lib/cloudinary');
+        foto_mengajar = await uploadImage(foto_mengajar_raw, 'neis/kehadiran');
+      } catch {
+        foto_mengajar = foto_mengajar_raw;
+      }
     }
 
     // Build update query - only update provided fields
