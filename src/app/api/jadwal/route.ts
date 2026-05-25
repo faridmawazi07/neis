@@ -193,25 +193,34 @@ export async function DELETE(req: NextRequest) {
     const payload = verifyToken(token);
     if (!payload) return NextResponse.json({ error: 'Token tidak valid' }, { status: 401 });
 
-    const { id } = await req.json();
+    const body = await req.json();
+    const { id, ids } = body;
+
+    // Support bulk delete (array of IDs) or single ID
+    const deleteIds: string[] = ids || (id ? [id] : []);
+    if (deleteIds.length === 0) {
+      return NextResponse.json({ error: 'ID jadwal wajib diisi' }, { status: 400 });
+    }
 
     // Check ownership for guru
     if (payload.role === 'guru') {
       const existing = await turso.execute({
-        sql: 'SELECT guru_id FROM jadwal WHERE id = ?',
-        args: [id],
+        sql: `SELECT id, guru_id FROM jadwal WHERE id IN (${deleteIds.map(() => '?').join(', ')})`,
+        args: deleteIds,
       });
-      if (existing.rows.length === 0 || existing.rows[0].guru_id !== payload.userId) {
-        return NextResponse.json({ error: 'Anda tidak memiliki akses untuk menghapus jadwal ini' }, { status: 403 });
+      const unauthorized = existing.rows.some((r: any) => r.guru_id !== payload.userId);
+      if (unauthorized || existing.rows.length !== deleteIds.length) {
+        return NextResponse.json({ error: 'Anda tidak memiliki akses untuk menghapus salah satu jadwal ini' }, { status: 403 });
       }
     }
 
+    // Delete all selected jadwal
     await turso.execute({
-      sql: 'DELETE FROM jadwal WHERE id = ?',
-      args: [id],
+      sql: `DELETE FROM jadwal WHERE id IN (${deleteIds.map(() => '?').join(', ')})`,
+      args: deleteIds,
     });
 
-    return NextResponse.json({ message: 'Jadwal berhasil dihapus' });
+    return NextResponse.json({ message: `${deleteIds.length} jadwal berhasil dihapus` });
   } catch (error) {
     console.error('Jadwal DELETE error:', error);
     return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -16,7 +17,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Trash2Icon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export function JadwalPage() {
@@ -44,6 +45,10 @@ export function JadwalPage() {
   const [formLoading, setFormLoading] = useState(false);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Bulk selection (admin only)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const isGuru = role === 'guru';
   const isAdmin = role === 'admin';
@@ -93,6 +98,11 @@ export function JadwalPage() {
     fetchData();
     fetchRefData();
   }, [fetchData, fetchRefData]);
+
+  // Clear selection when data changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [data]);
 
   const openAddForm = () => {
     setEditData(null);
@@ -200,15 +210,70 @@ export function JadwalPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const res = await fetch('/api/jadwal', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: 'Error', description: data.error, variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Berhasil', description: `${selectedIds.size} jadwal berhasil dihapus` });
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+      fetchData();
+    } catch {
+      toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' });
+    }
+  };
+
+  // Selection helpers
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === data.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(data.map((d) => d.id)));
+    }
+  };
+
+  const allSelected = data.length > 0 && selectedIds.size === data.length;
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">Jadwal</h1>
-        {canAdd && (
-          <Button onClick={openAddForm} size="sm" className="bg-ocean hover:bg-ocean-dark text-white">
-            <Plus className="h-4 w-4 mr-1" /> Tambah
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {isAdmin && selectedIds.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2Icon className="h-4 w-4 mr-1" /> Hapus ({selectedIds.size})
+            </Button>
+          )}
+          {canAdd && (
+            <Button onClick={openAddForm} size="sm" className="bg-ocean hover:bg-ocean-dark text-white">
+              <Plus className="h-4 w-4 mr-1" /> Tambah
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -224,6 +289,17 @@ export function JadwalPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {isAdmin && (
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={allSelected}
+                          ref={(el) => {
+                            if (el) el.dataset.state = someSelected ? 'indeterminate' : allSelected ? 'checked' : 'unchecked';
+                          }}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Hari</TableHead>
                     {isAdmin && <TableHead>Guru</TableHead>}
                     <TableHead>Kelas</TableHead>
@@ -236,7 +312,15 @@ export function JadwalPage() {
                 </TableHeader>
                 <TableBody>
                   {data.map((d) => (
-                    <TableRow key={d.id}>
+                    <TableRow key={d.id} className={selectedIds.has(d.id) ? 'bg-muted/50' : ''}>
+                      {isAdmin && (
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(d.id)}
+                            onCheckedChange={() => toggleSelect(d.id)}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>{d.nama_hari}</TableCell>
                       {isAdmin && <TableCell>{d.guru_nama}</TableCell>}
                       <TableCell>{d.nama_kelas}</TableCell>
@@ -351,7 +435,7 @@ export function JadwalPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
+      {/* Delete Confirmation (single) */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -361,6 +445,24 @@ export function JadwalPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Batal</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Hapus</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus {selectedIds.size} Jadwal?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedIds.size} jadwal yang dipilih akan dihapus secara permanen. Tindakan ini tidak dapat dikembalikan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground">
+              Hapus {selectedIds.size} Jadwal
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
