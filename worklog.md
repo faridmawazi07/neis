@@ -50,3 +50,27 @@ Stage Summary:
 - PAT stored securely in .env.local (not committed to repo)
 - Remote: https://github.com/faridmawazi07/neis.git - 4 commits pushed successfully
 - Dev server running normally on port 3000
+
+---
+Task ID: 3
+Agent: Main Orchestrator
+Task: Admin bulk delete kehadiran mengajar
+
+Work Log:
+- Modified API route `/api/kehadiran-mengajar/route.ts` DELETE handler to support bulk delete with `{ ids: [...] }` body (admin only)
+- Single delete still works with `{ id: ... }` for both admin and guru
+- Bulk delete validates all IDs exist before deleting
+- Modified `kehadiran-page.tsx` to add:
+  - Checkbox column in table (admin only)
+  - Select all checkbox in header
+  - Selected row highlight (`bg-muted/50`)
+  - Bulk delete button next to title showing count of selected items
+  - Confirmation dialog for bulk delete
+  - Selection auto-resets when data refreshes
+- Added `Trash` icon import and `Checkbox` component import
+- Lint passes cleanly
+
+Stage Summary:
+- Admin can now select multiple kehadiran records via checkboxes and delete them all at once
+- Bulk delete is admin-only (API enforces this)
+- Single delete still works for both admin and guru
