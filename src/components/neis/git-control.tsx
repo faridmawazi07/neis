@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import {
   Upload, Download, Loader2, Settings, Wifi, WifiOff, Clock, GitBranch,
   AlertCircle, CheckCircle2, Cloud, HardDrive, ImageIcon, Zap,
-  ShieldAlert, ShieldCheck, RefreshCw,
+  ShieldAlert, ShieldCheck, RefreshCw, RotateCcw, Shield,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -38,6 +38,9 @@ interface GitStatus {
   behind: number;
   synced: boolean;
   needsPull: boolean;
+  sandboxReset: boolean;
+  syncMarkerPresent: boolean;
+  fetched: boolean;
   cloudinary: CloudinaryInfo;
 }
 
@@ -60,6 +63,7 @@ export function GitControlPage() {
     connected: false, autoPush: true, lastPush: null, lastPull: null,
     branch: 'dev', currentBranch: 'main', hasUncommittedChanges: false,
     ahead: 0, behind: 0, synced: true, needsPull: false,
+    sandboxReset: false, syncMarkerPresent: true, fetched: false,
     cloudinary: { configured: false },
   });
 
@@ -74,7 +78,7 @@ export function GitControlPage() {
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const handlePush = async () => {
-    if (!status.synced) { toast({ title: 'Diblokir', description: 'Push diblokir! Ambil kode dari GitHub terlebih dahulu.', variant: 'destructive' }); return; }
+    if (!status.synced) { toast({ title: 'Push Diblokir', description: 'Sandbox belum sinkron. Ambil kode dari GitHub terlebih dahulu.', variant: 'destructive' }); return; }
     setPushing(true);
     try {
       const res = await fetch('/api/git-control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'push' }), credentials: 'include' });
@@ -122,41 +126,74 @@ export function GitControlPage() {
         </Button>
       </div>
 
-      {/* SANDBOX RESET WARNING */}
-      {!loading && status.connected && !status.synced && (
+      {/* ====== SANDBOX RESET WARNING ====== */}
+      {!loading && status.connected && (status.sandboxReset || !status.syncMarkerPresent) && (
         <Card className="mb-4 border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <ShieldAlert className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h3 className="font-bold text-red-700 dark:text-red-400 text-base">Sandbox Reset Terdeteksi!</h3>
+                <h3 className="font-bold text-red-700 dark:text-red-400 text-base">
+                  {status.sandboxReset ? '🚨 Sandbox Reset Terdeteksi!' : '⚠️ Sandbox Belum Sinkron'}
+                </h3>
                 <p className="text-sm text-red-600 dark:text-red-500 mt-1">
-                  Kode lokal kemungkinan sudah usang. <strong>Push ke GitHub diblokir</strong> untuk mencegah kode lama menimpa kode terbaru.
+                  {status.sandboxReset 
+                    ? <>Sandbox telah direset. <strong>Push ke GitHub diblokir</strong> untuk mencegah kode lama menimpa kode terbaru di GitHub. Kode akan otomatis dipulihkan dari GitHub.</>
+                    : <>Kode lokal kemungkinan sudah usang. <strong>Push ke GitHub diblokir</strong> sampai kode disinkronkan.</>
+                  }
                 </p>
-                <Button onClick={handlePull} disabled={pulling} className="mt-3 bg-red-600 hover:bg-red-700 text-white" size="sm">
-                  {pulling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                  {pulling ? 'Mengambil...' : 'Sinkronkan Sekarang'}
-                </Button>
+                <div className="mt-3 space-y-2">
+                  <Button onClick={handlePull} disabled={pulling} className="bg-red-600 hover:bg-red-700 text-white" size="sm">
+                    {pulling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    {pulling ? 'Memulihkan...' : 'Pulihkan dari GitHub'}
+                  </Button>
+                  <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
+                    <RotateCcw className="h-3 w-3" /> 
+                    {status.sandboxReset 
+                      ? 'Auto-recovery akan berjalan saat server start'
+                      : 'Klik tombol di atas untuk mulai sinkronisasi'
+                    }
+                  </p>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* SYNCED SUCCESS */}
-      {!loading && status.connected && status.synced && (
+      {/* ====== SYNCED SUCCESS ====== */}
+      {!loading && status.connected && status.synced && !status.sandboxReset && (
         <Card className="mb-4 border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
           <CardContent className="p-3">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-green-600 shrink-0" />
-              <span className="font-medium text-sm text-green-700 dark:text-green-400">Sandbox sudah sinkron dengan GitHub</span>
+              <span className="font-medium text-sm text-green-700 dark:text-green-400">Sandbox sinkron dengan GitHub</span>
               <Badge className="bg-green-600 ml-auto">Aman</Badge>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* GitHub Connection */}
+      {/* ====== BEHIND WARNING (synced but behind) ====== */}
+      {!loading && status.connected && status.syncMarkerPresent && !status.sandboxReset && status.behind > 0 && (
+        <Card className="mb-4 border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-sm text-orange-700 dark:text-orange-400">
+                  Kode lokal tertinggal {status.behind} commit dari GitHub
+                </p>
+                <p className="text-xs text-orange-600 dark:text-orange-500 mt-1">
+                  Auto-pull akan berjalan pada siklus berikutnya, atau klik &quot;Ambil dari GitHub&quot; untuk sinkronkan sekarang.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ====== GitHub Connection ====== */}
       <Card className="mb-4">
         <CardContent className="p-4 space-y-3">
           {loading ? (
@@ -206,7 +243,46 @@ export function GitControlPage() {
         </CardContent>
       </Card>
 
-      {/* Cloudinary */}
+      {/* ====== Protection Status ====== */}
+      {!loading && status.connected && (
+        <Card className="mb-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-5 w-5 text-emerald-500" /> Proteksi Sandbox Reset
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+              <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                <div className={`h-2.5 w-2.5 rounded-full ${status.sandboxReset ? 'bg-red-500' : 'bg-green-500'}`} />
+                <span className="text-muted-foreground">Reset: </span>
+                <strong className={status.sandboxReset ? 'text-red-600' : 'text-green-600'}>
+                  {status.sandboxReset ? 'Terdeteksi!' : 'Tidak'}
+                </strong>
+              </div>
+              <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                <div className={`h-2.5 w-2.5 rounded-full ${status.syncMarkerPresent ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-muted-foreground">Marker: </span>
+                <strong className={status.syncMarkerPresent ? 'text-green-600' : 'text-red-600'}>
+                  {status.syncMarkerPresent ? 'Ada' : 'Hilang'}
+                </strong>
+              </div>
+              <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+                <div className={`h-2.5 w-2.5 rounded-full ${status.synced ? 'bg-green-500' : 'bg-orange-500'}`} />
+                <span className="text-muted-foreground">Push: </span>
+                <strong className={status.synced ? 'text-green-600' : 'text-orange-600'}>
+                  {status.synced ? 'Diizinkan' : 'Diblokir'}
+                </strong>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Saat sandbox reset, marker sinkronisasi hilang &rarr; push diblokir &rarr; auto-pull dari GitHub &rarr; push dibuka kembali
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ====== Cloudinary ====== */}
       <Card className="mb-4">
         <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><Cloud className="h-5 w-5 text-sky-500" /> Cloudinary Penyimpanan Foto</CardTitle></CardHeader>
         <CardContent className="space-y-3">
@@ -235,7 +311,7 @@ export function GitControlPage() {
         </CardContent>
       </Card>
 
-      {/* Push & Pull */}
+      {/* ====== Push & Pull ====== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
         <Card className={!status.synced ? 'opacity-60' : ''}>
           <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Upload className="h-5 w-5 text-ocean" /> Simpan ke GitHub</CardTitle></CardHeader>
@@ -246,7 +322,7 @@ export function GitControlPage() {
               {pushing ? 'Menyimpan...' : 'Simpan ke GitHub'}
             </Button>
             {!status.connected && <p className="text-xs text-destructive mt-2">GitHub Token belum dikonfigurasi</p>}
-            {status.connected && !status.synced && <p className="text-xs text-red-500 mt-2 flex items-center gap-1"><ShieldAlert className="h-3 w-3" /> Diblokir - Ambil dari GitHub dulu</p>}
+            {status.connected && !status.synced && <p className="text-xs text-red-500 mt-2 flex items-center gap-1"><ShieldAlert className="h-3 w-3" /> Diblokir - Sinkronkan dulu</p>}
           </CardContent>
         </Card>
         <Card className={status.needsPull && status.connected ? 'ring-2 ring-orange-300' : ''}>
@@ -263,23 +339,24 @@ export function GitControlPage() {
         </Card>
       </div>
 
-      {/* Info Box */}
-      <div className="mt-4 max-w-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm">
+      {/* ====== Info Box - Alur Proteksi ====== */}
+      <div className="mt-4 max-w-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-md p-3 text-sm">
         <div className="flex items-start gap-2">
-          <GitBranch className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-          <div className="text-blue-700 dark:text-blue-400">
-            <p className="font-medium">Alur Kerja Anti-Reset</p>
-            <div className="mt-2 space-y-1 text-blue-600 dark:text-blue-500">
-              <p>1. Sandbox reset → <strong>Push DIBLOKIR</strong></p>
-              <p>2. NEIS otomatis <strong>pull dari GitHub</strong></p>
-              <p>3. Setelah sinkron → Push dibuka + auto-push aktif</p>
-              <p>4. GitHub: merge <strong>dev → main</strong> → Vercel deploy</p>
+          <Shield className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+          <div className="text-emerald-700 dark:text-emerald-400">
+            <p className="font-medium">Alur Proteksi Anti-Reset</p>
+            <div className="mt-2 space-y-1 text-emerald-600 dark:text-emerald-500">
+              <p>1️⃣ Sandbox reset → <strong>Marker sinkronisasi hilang</strong></p>
+              <p>2️⃣ Push ke GitHub → <strong>DIBLOKIR</strong> (kode lama tidak bisa menimpa)</p>
+              <p>3️⃣ Auto-pull → <strong>Kode dipulihkan dari GitHub</strong></p>
+              <p>4️⃣ Setelah sinkron → Push dibuka + auto-push aktif</p>
+              <p>5️⃣ GitHub: merge <strong>dev → main</strong> → Vercel deploy</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Settings */}
+      {/* ====== Settings ====== */}
       <Dialog open={settingsOpen} onOpenChange={(open) => { if (!saving) setSettingsOpen(open); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Pengaturan GitHub</DialogTitle></DialogHeader>
