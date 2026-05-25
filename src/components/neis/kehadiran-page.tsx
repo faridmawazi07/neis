@@ -39,13 +39,11 @@ export function KehadiranPage() {
   const [search, setSearch] = useState('');
 
   // Date filters
-  const [tanggalGuruFrom, setTanggalGuruFrom] = useState<Date>(() => {
+  const [tanggalFrom, setTanggalFrom] = useState<Date>(() => {
     const d = new Date();
     d.setDate(1); // first day of current month
     return d;
   });
-  const [tanggalGuruTo, setTanggalGuruTo] = useState<Date>(new Date());
-  const [tanggalFrom, setTanggalFrom] = useState<Date>(new Date());
   const [tanggalTo, setTanggalTo] = useState<Date>(new Date());
 
   // Kelas filter
@@ -100,12 +98,8 @@ export function KehadiranPage() {
     setLoading(true);
     try {
       let url = '/api/kehadiran-mengajar?';
-      if (isGuru) {
-        url += `guru_id=${user?.id}&tanggal_from=${format(tanggalGuruFrom, 'yyyy-MM-dd')}&tanggal_to=${format(tanggalGuruTo, 'yyyy-MM-dd')}`;
-      } else {
-        url += `tanggal_from=${format(tanggalFrom, 'yyyy-MM-dd')}&tanggal_to=${format(tanggalTo, 'yyyy-MM-dd')}`;
-        if (search) url += `&search=${encodeURIComponent(search)}`;
-      }
+      url += `tanggal_from=${format(tanggalFrom, 'yyyy-MM-dd')}&tanggal_to=${format(tanggalTo, 'yyyy-MM-dd')}`;
+      if (search) url += `&search=${encodeURIComponent(search)}`;
       if (selectedKelasId && selectedKelasId !== 'all') {
         url += `&kelas_id=${selectedKelasId}`;
       }
@@ -119,7 +113,7 @@ export function KehadiranPage() {
     } finally {
       setLoading(false);
     }
-  }, [isGuru, user?.id, tanggalGuruFrom, tanggalGuruTo, tanggalFrom, tanggalTo, search, selectedKelasId]);
+  }, [tanggalFrom, tanggalTo, search, selectedKelasId]);
 
   const checkHoliday = useCallback(async () => {
     if (!isGuru) return;
@@ -179,11 +173,7 @@ export function KehadiranPage() {
     doc.setFontSize(14);
     doc.text('Kehadiran Mengajar', 14, 15);
     doc.setFontSize(10);
-    if (isGuru) {
-      doc.text(`Periode: ${format(tanggalGuruFrom, 'dd MMM yyyy')} - ${format(tanggalGuruTo, 'dd MMM yyyy')}`, 14, 22);
-    } else {
-      doc.text(`Periode: ${format(tanggalFrom, 'dd MMM yyyy')} - ${format(tanggalTo, 'dd MMM yyyy')}`, 14, 22);
-    }
+    doc.text(`Periode: ${format(tanggalFrom, 'dd MMM yyyy')} - ${format(tanggalTo, 'dd MMM yyyy')}`, 14, 22);
     autoTable(doc, {
       startY: 28,
       head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']],
@@ -248,66 +238,39 @@ export function KehadiranPage() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              {isGuru ? (
-                <>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1">
-                        <CalendarIcon className="h-3.5 w-3.5" />
-                        Dari: {format(tanggalGuruFrom, 'dd MMM yyyy')}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={tanggalGuruFrom} onSelect={(d) => d && setTanggalGuruFrom(d)} />
-                    </PopoverContent>
-                  </Popover>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1">
-                        <CalendarIcon className="h-3.5 w-3.5" />
-                        Sampai: {format(tanggalGuruTo, 'dd MMM yyyy')}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={tanggalGuruTo} onSelect={(d) => d && setTanggalGuruTo(d)} />
-                    </PopoverContent>
-                  </Popover>
-                </>
-              ) : (
-                <>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1">
-                        <CalendarIcon className="h-3.5 w-3.5" />
-                        Dari: {format(tanggalFrom, 'dd MMM yyyy')}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={tanggalFrom} onSelect={(d) => d && setTanggalFrom(d)} />
-                    </PopoverContent>
-                  </Popover>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-1">
-                        <CalendarIcon className="h-3.5 w-3.5" />
-                        Sampai: {format(tanggalTo, 'dd MMM yyyy')}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={tanggalTo} onSelect={(d) => d && setTanggalTo(d)} />
-                    </PopoverContent>
-                  </Popover>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Cari guru..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="pl-9 w-48"
-                      size={20}
-                    />
-                  </div>
-                </>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1">
+                    <CalendarIcon className="h-3.5 w-3.5" />
+                    Dari: {format(tanggalFrom, 'dd MMM yyyy')}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={tanggalFrom} onSelect={(d) => d && setTanggalFrom(d)} />
+                </PopoverContent>
+              </Popover>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1">
+                    <CalendarIcon className="h-3.5 w-3.5" />
+                    Sampai: {format(tanggalTo, 'dd MMM yyyy')}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={tanggalTo} onSelect={(d) => d && setTanggalTo(d)} />
+                </PopoverContent>
+              </Popover>
+              {!isGuru && (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Cari guru..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-9 w-48"
+                    size={20}
+                  />
+                </div>
               )}
               <Select value={selectedKelasId} onValueChange={setSelectedKelasId}>
                 <SelectTrigger className="w-[160px] h-9">
@@ -344,7 +307,7 @@ export function KehadiranPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Tanggal</TableHead>
-                    {!isGuru && <TableHead>Guru</TableHead>}
+                    <TableHead>Guru</TableHead>
                     <TableHead>Kelas</TableHead>
                     <TableHead>Mapel</TableHead>
                     <TableHead className="text-center">Hadir</TableHead>
@@ -363,21 +326,23 @@ export function KehadiranPage() {
                   {data.map((d) => (
                     <TableRow key={d.id}>
                       <TableCell className="text-xs">{d.tanggal}</TableCell>
-                      {!isGuru && (
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {d.guru_foto && (
-                              <button type="button" onClick={() => { setImageModalSrc(d.guru_foto); setImageModalOpen(true); }} className="hover:ring-2 hover:ring-ocean rounded-full transition-all">
-                                <img src={d.guru_foto} alt={d.guru_nama} className="w-7 h-7 rounded-full object-cover" />
-                              </button>
-                            )}
-                            <div>
-                              <p className="text-sm font-medium">{d.guru_nama}</p>
-                              <p className="text-xs text-muted-foreground">{d.guru_nip}</p>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {d.guru_foto ? (
+                            <button type="button" onClick={() => { setImageModalSrc(d.guru_foto); setImageModalOpen(true); }} className="shrink-0 hover:ring-2 hover:ring-ocean rounded-full transition-all overflow-hidden w-7 h-7">
+                              <img src={d.guru_foto} alt={d.guru_nama} className="w-7 h-7 rounded-full object-cover" />
+                            </button>
+                          ) : (
+                            <div className="shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground">
+                              {(d.guru_nama || '?')[0]?.toUpperCase()}
                             </div>
+                          )}
+                          <div>
+                            <p className="text-sm font-medium">{d.guru_nama}</p>
+                            <p className="text-xs text-muted-foreground">{d.guru_nip}</p>
                           </div>
-                        </TableCell>
-                      )}
+                        </div>
+                      </TableCell>
                       <TableCell>{d.nama_kelas}</TableCell>
                       <TableCell>{d.nama_mapel}</TableCell>
                       <TableCell className="text-center">{d.jumlah_hadir}</TableCell>

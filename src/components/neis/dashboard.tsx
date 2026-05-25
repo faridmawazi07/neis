@@ -99,7 +99,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   // Admin Widgets
   const renderAdminWidgets = () => (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <Card className="border-blue-200 dark:border-blue-800">
+      <Card className="border-blue-200 dark:border-blue-800 cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate('data-pegawai')}>
         <CardContent className="p-4 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/50">
             <Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />
