@@ -127,46 +127,6 @@ export async function initSchema() {
     )
   `);
 
-  // Migration: Add snapshot columns to kehadiran_mengajar
-  // These store a "frozen copy" of jadwal data at the time kehadiran was created,
-  // so that editing/deleting jadwal later doesn't corrupt historical attendance data.
-  const snapshotColumns = [
-    { name: 'snapshot_guru_nama', type: 'TEXT', default: 'NULL' },
-    { name: 'snapshot_mapel', type: 'TEXT', default: 'NULL' },
-    { name: 'snapshot_kelas', type: 'TEXT', default: 'NULL' },
-    { name: 'snapshot_hari', type: 'TEXT', default: 'NULL' },
-    { name: 'snapshot_jam_ke', type: 'INTEGER', default: 'NULL' },
-    { name: 'snapshot_jam_mulai', type: 'TEXT', default: 'NULL' },
-    { name: 'snapshot_jam_selesai', type: 'TEXT', default: 'NULL' },
-    { name: 'snapshot_guru_nip', type: 'TEXT', default: 'NULL' },
-  ];
-
-  for (const col of snapshotColumns) {
-    try {
-      await turso.execute(`ALTER TABLE kehadiran_mengajar ADD COLUMN ${col.name} ${col.type} DEFAULT ${col.default}`);
-    } catch {
-      // Column already exists - that's fine, skip
-    }
-  }
-
-  // Backfill snapshot data for existing records that don't have snapshots yet
-  try {
-    await turso.execute(`
-      UPDATE kehadiran_mengajar
-      SET snapshot_guru_nama = (SELECT u.nama FROM users u WHERE u.id = kehadiran_mengajar.guru_id),
-          snapshot_guru_nip = (SELECT u.nip FROM users u WHERE u.id = kehadiran_mengajar.guru_id),
-          snapshot_mapel = (SELECT m.nama_mapel FROM jadwal j LEFT JOIN mapel m ON j.mapel_id = m.id WHERE j.id = kehadiran_mengajar.jadwal_id),
-          snapshot_kelas = (SELECT k.nama_kelas FROM jadwal j LEFT JOIN kelas k ON j.kelas_id = k.id WHERE j.id = kehadiran_mengajar.jadwal_id),
-          snapshot_hari = (SELECT h.nama_hari FROM jadwal j LEFT JOIN hari h ON j.hari_id = h.id WHERE j.id = kehadiran_mengajar.jadwal_id),
-          snapshot_jam_ke = (SELECT j.jam_ke FROM jadwal j WHERE j.id = kehadiran_mengajar.jadwal_id),
-          snapshot_jam_mulai = (SELECT j.jam_mulai FROM jadwal j WHERE j.id = kehadiran_mengajar.jadwal_id),
-          snapshot_jam_selesai = (SELECT j.jam_selesai FROM jadwal j WHERE j.id = kehadiran_mengajar.jadwal_id)
-      WHERE snapshot_guru_nama IS NULL
-    `);
-  } catch {
-    // Backfill might fail if no records exist - that's fine
-  }
-
   console.log('Database schema initialized successfully');
 }
 
