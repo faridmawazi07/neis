@@ -346,99 +346,69 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
 
       {/* Edit Modal */}
       <Dialog open={!!editModal} onOpenChange={() => setEditModal(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Edit Data Pegawai</DialogTitle></DialogHeader>
           {editModal && (
-            <form className="space-y-4" autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleEditSubmit(); }}>
+            <form className="space-y-3" autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleEditSubmit(); }}>
               {/* Honeypot - mencegah browser autofill */}
-              <input type="text" name="fake-username" className="hidden" tabIndex={-1} autoComplete="off" />
-              <input type="password" name="fake-password" className="hidden" tabIndex={-1} autoComplete="new-password" />
+              <input type="text" className="hidden" tabIndex={-1} autoComplete="username" />
+              <input type="password" className="hidden" tabIndex={-1} autoComplete="current-password" />
 
-              {/* Photo */}
-              <div className="space-y-2">
-                <Label>Foto Profile</Label>
-                <div className="flex items-center gap-4">
-                  <div className="relative group">
-                    {editPhotoPreview ? (
-                      <button onClick={() => openImagePreview(editPhotoPreview, editForm.nama)} className="relative">
-                        <img src={editPhotoPreview} alt="Preview" className="w-16 h-16 rounded-full object-cover hover:ring-2 hover:ring-ocean cursor-pointer" />
-                        <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
-                          <Eye className="h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                      </button>
-                    ) : (
-                      <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center text-lg font-bold text-muted-foreground">
-                        {editForm.nama?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleEditPhotoChange}
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Upload className="h-3.5 w-3.5" /> Upload Foto
+              {/* Photo - compact */}
+              <div className="flex items-center gap-3">
+                <div className="relative group shrink-0">
+                  {editPhotoPreview ? (
+                    <button type="button" onClick={() => openImagePreview(editPhotoPreview, editForm.nama)} className="relative">
+                      <img src={editPhotoPreview} alt="Preview" className="w-12 h-12 rounded-full object-cover hover:ring-2 hover:ring-ocean cursor-pointer" />
+                    </button>
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
+                      {editForm.nama?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleEditPhotoChange} className="hidden" />
+                  <Button type="button" variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => fileInputRef.current?.click()}>
+                    <Upload className="h-3 w-3" /> Upload
+                  </Button>
+                  {editPhotoPreview && (
+                    <Button type="button" variant="ghost" size="sm" className="gap-1 h-7 text-xs text-destructive" onClick={removeEditPhoto}>
+                      <X className="h-3 w-3" /> Hapus
                     </Button>
-                    {editPhotoPreview && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1 text-destructive"
-                        onClick={removeEditPhoto}
-                      >
-                        <X className="h-3.5 w-3.5" /> Hapus Foto
-                      </Button>
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
 
               {/* NIP */}
-              <div className="space-y-2">
-                <Label htmlFor="pegawai-nip">NIP</Label>
+              <div className="space-y-1">
+                <Label className="text-xs">NIP</Label>
                 <Input
-                  id="pegawai-nip"
-                  name="peg-nip-field"
                   value={editForm.nip}
                   onChange={(e) => setEditForm({ ...editForm, nip: e.target.value })}
                   placeholder="Masukkan NIP"
+                  className="h-8 text-sm"
                   autoComplete="off"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
                 />
               </div>
 
               {/* Nama */}
-              <div className="space-y-2">
-                <Label htmlFor="pegawai-nama">Nama</Label>
+              <div className="space-y-1">
+                <Label className="text-xs">Nama</Label>
                 <Input
-                  id="pegawai-nama"
-                  name="peg-nama-field"
                   value={editForm.nama}
                   onChange={(e) => setEditForm({ ...editForm, nama: e.target.value })}
                   placeholder="Masukkan nama"
+                  className="h-8 text-sm"
                   autoComplete="off"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
                 />
               </div>
 
               {/* Role */}
-              <div className="space-y-2">
-                <Label>Role</Label>
+              <div className="space-y-1">
+                <Label className="text-xs">Role</Label>
                 <Select value={editForm.role} onValueChange={(v) => setEditForm({ ...editForm, role: v })}>
-                  <SelectTrigger><SelectValue placeholder="Pilih role" /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Pilih role" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="guru">Guru</SelectItem>
                     <SelectItem value="pegawai">Pegawai</SelectItem>
@@ -447,58 +417,51 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                 </Select>
               </div>
 
-              {/* Jenis Kelamin */}
-              <div className="space-y-2">
-                <Label>Jenis Kelamin</Label>
-                <Select value={editForm.jenis_kelamin} onValueChange={(v) => setEditForm({ ...editForm, jenis_kelamin: v })}>
-                  <SelectTrigger><SelectValue placeholder="Pilih jenis kelamin" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="L">Laki-laki</SelectItem>
-                    <SelectItem value="P">Perempuan</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Tanggal Lahir - readonly trick to prevent browser autofill */}
-              <div className="space-y-2">
-                <Label htmlFor="pegawai-tgl-lahir">Tanggal Lahir</Label>
-                <Input
-                  id="pegawai-tgl-lahir"
-                  name="peg-tgl-field"
-                  type="date"
-                  value={editForm.tanggal_lahir}
-                  onChange={(e) => setEditForm({ ...editForm, tanggal_lahir: e.target.value })}
-                  readOnly={!tglFocused}
-                  onFocus={() => setTglFocused(true)}
-                  onBlur={() => setTglFocused(false)}
-                  autoComplete="off"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                />
+              {/* Jenis Kelamin & Tanggal Lahir - side by side */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Jenis Kelamin</Label>
+                  <Select value={editForm.jenis_kelamin} onValueChange={(v) => setEditForm({ ...editForm, jenis_kelamin: v })}>
+                    <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Pilih" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="L">Laki-laki</SelectItem>
+                      <SelectItem value="P">Perempuan</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Tanggal Lahir</Label>
+                  <Input
+                    type={tglFocused ? 'date' : 'text'}
+                    value={tglFocused ? editForm.tanggal_lahir : (editForm.tanggal_lahir || 'Pilih tanggal')}
+                    onChange={(e) => setEditForm({ ...editForm, tanggal_lahir: e.target.value })}
+                    onFocus={() => setTglFocused(true)}
+                    onBlur={() => setTglFocused(false)}
+                    className={`h-8 text-sm ${!tglFocused && !editForm.tanggal_lahir ? 'text-muted-foreground' : ''}`}
+                    readOnly={false}
+                    autoComplete="off"
+                  />
+                </div>
               </div>
 
               {/* Password */}
-              <div className="space-y-2">
-                <Label htmlFor="pegawai-password">Password Baru</Label>
+              <div className="space-y-1">
+                <Label className="text-xs">Password Baru</Label>
                 <Input
-                  id="pegawai-password"
-                  name="peg-pwd-field"
                   type="password"
                   value={editForm.password}
                   onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
-                  placeholder="Kosongkan jika tidak ingin mengubah password"
+                  placeholder="Kosongkan jika tidak diubah"
+                  className="h-8 text-sm"
                   autoComplete="new-password"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
                 />
-                <p className="text-[11px] text-muted-foreground">Biarkan kosong jika tidak ingin mengubah password</p>
               </div>
             </form>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditModal(null)}>Batal</Button>
-            <Button type="button" onClick={handleEditSubmit} disabled={editLoading} className="bg-ocean hover:bg-ocean-dark text-white">
-              {editLoading ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : 'Simpan'}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setEditModal(null)}>Batal</Button>
+            <Button type="button" size="sm" onClick={handleEditSubmit} disabled={editLoading} className="bg-ocean hover:bg-ocean-dark text-white">
+              {editLoading ? <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white" /> : 'Simpan'}
             </Button>
           </DialogFooter>
         </DialogContent>
