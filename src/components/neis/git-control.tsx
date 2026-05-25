@@ -3,65 +3,68 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Upload, Download, Loader2, Clock, CheckCircle2, XCircle, MinusCircle, RefreshCw, AlertTriangle, ShieldAlert, ArrowDownToLine, Cloud, Image } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Upload, Download, Loader2, Settings, Wifi, WifiOff, Clock, GitBranch, AlertCircle, CheckCircle2,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-interface AutoPushStatus {
-  enabled: boolean;
-  intervalMinutes: number;
-  lastAutoPushTime: string | null;
-  lastAutoPushStatus: 'success' | 'failed' | 'no_changes' | 'sandbox_reset_blocked' | null;
-  sandboxResetDetected: boolean;
+interface GitStatus {
+  connected: boolean;
+  autoPush: boolean;
+  lastPush: string | null;
+  lastPull: string | null;
+  branch: string;
+  currentBranch: string;
+  hasUncommittedChanges: boolean;
+  ahead: number;
+  behind: number;
+}
+
+function formatTime(iso: string | null): string {
+  if (!iso) return 'Belum pernah';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
 }
 
 export function GitControlPage() {
   const { toast } = useToast();
   const [pushing, setPushing] = useState(false);
   const [pulling, setPulling] = useState(false);
-  const [forcePushing, setForcePushing] = useState(false);
-  const [recovering, setRecovering] = useState(false);
-  const [autoStatus, setAutoStatus] = useState<AutoPushStatus | null>(null);
-  const [toggling, setToggling] = useState(false);
-  const [changingInterval, setChangingInterval] = useState(false);
-  const [cloudinaryStatus, setCloudinaryStatus] = useState<{ configured: boolean; cloudName: string | null } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [autoPush, setAutoPush] = useState(true);
+  const [branch, setBranch] = useState('main');
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<GitStatus>({
+    connected: false, autoPush: true, lastPush: null, lastPull: null,
+    branch: 'main', currentBranch: 'main', hasUncommittedChanges: false, ahead: 0, behind: 0,
+  });
 
-  const fetchAutoStatus = useCallback(async () => {
+  const fetchStatus = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await fetch('/api/git-control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'auto-push-status' }), credentials: 'include',
-      });
+      const res = await fetch('/api/git-control', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setAutoStatus(data);
+        setStatus(data);
+        setAutoPush(data.autoPush);
+        setBranch(data.branch);
       }
-    } catch {}
+    } catch {} finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchAutoStatus();
-    const interval = setInterval(fetchAutoStatus, 30000);
-    return () => clearInterval(interval);
-  }, [fetchAutoStatus]);
-
-  // Fetch Cloudinary status
-  useEffect(() => {
-    const fetchCloudinary = async () => {
-      try {
-        const res = await fetch('/api/upload', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          setCloudinaryStatus(data);
-        }
-      } catch {}
-    };
-    fetchCloudinary();
-  }, []);
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const handlePush = async () => {
     setPushing(true);
@@ -71,34 +74,11 @@ export function GitControlPage() {
         body: JSON.stringify({ action: 'push' }), credentials: 'include',
       });
       const data = await res.json();
-      if (!res.ok) {
-        if (data.sandboxResetDetected) {
-          toast({ title: '🚨 Sandbox Reset Terdeteksi!', description: data.error, variant: 'destructive', duration: 10000 });
-        } else {
-          toast({ title: 'Gagal', description: data.error, variant: 'destructive' });
-        }
-        return;
-      }
+      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
       toast({ title: 'Berhasil', description: data.message });
-      fetchAutoStatus();
+      fetchStatus();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan koneksi', variant: 'destructive' }); }
     finally { setPushing(false); }
-  };
-
-  const handleForcePush = async () => {
-    if (!confirm('⚠️ PERINGATAN: Force push akan MENIMPA semua data di GitHub dengan data lokal saat ini. Data GitHub yang lebih baru akan HILANG. Lanjutkan?')) return;
-    setForcePushing(true);
-    try {
-      const res = await fetch('/api/git-control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'force-push' }), credentials: 'include',
-      });
-      const data = await res.json();
-      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
-      toast({ title: 'Force Push Berhasil', description: data.message });
-      fetchAutoStatus();
-    } catch { toast({ title: 'Error', description: 'Terjadi kesalahan koneksi', variant: 'destructive' }); }
-    finally { setForcePushing(false); }
   };
 
   const handlePull = async () => {
@@ -111,275 +91,108 @@ export function GitControlPage() {
       const data = await res.json();
       if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
       toast({ title: 'Berhasil', description: data.message });
-      fetchAutoStatus();
+      fetchStatus();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan koneksi', variant: 'destructive' }); }
     finally { setPulling(false); }
   };
 
-  const handleDismissSandboxReset = async () => {
+  const handleSaveConfig = async () => {
+    setSaving(true);
     try {
       const res = await fetch('/api/git-control', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'dismiss-sandbox-reset' }), credentials: 'include',
+        body: JSON.stringify({ action: 'save-config', autoPush, branch }), credentials: 'include',
       });
       const data = await res.json();
-      if (res.ok) {
-        toast({ title: 'Dikonfirmasi', description: data.message });
-        fetchAutoStatus();
-      }
-    } catch {}
+      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
+      toast({ title: 'Berhasil', description: 'Konfigurasi berhasil disimpan' });
+      setSettingsOpen(false);
+      fetchStatus();
+    } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
+    finally { setSaving(false); }
   };
-
-  const handleRecovery = async () => {
-    if (!confirm('🔄 Memulihkan data dari GitHub? Ini akan menarik semua kode dan database terbaru dari GitHub. Lanjutkan?')) return;
-    setRecovering(true);
-    try {
-      const res = await fetch('/api/git-control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'recovery' }), credentials: 'include',
-      });
-      const data = await res.json();
-      if (res.ok && data.recovered) {
-        toast({ title: '✅ Pemulihan Berhasil!', description: data.message, duration: 8000 });
-        // Reload the page after short delay to apply all recovered changes
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
-      } else if (!res.ok) {
-        toast({ title: 'Gagal', description: data.error, variant: 'destructive' });
-      }
-    } catch { toast({ title: 'Error', description: 'Terjadi kesalahan koneksi', variant: 'destructive' }); }
-    finally { setRecovering(false); }
-  };
-
-  const handleToggleAutoPush = async (enabled: boolean) => {
-    setToggling(true);
-    try {
-      const res = await fetch('/api/git-control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'auto-push-toggle', enabled }), credentials: 'include',
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast({ title: enabled ? 'Auto-Push Aktif' : 'Auto-Push Nonaktif', description: data.message });
-        fetchAutoStatus();
-      }
-    } catch { toast({ title: 'Error', description: 'Gagal mengubah auto-push', variant: 'destructive' }); }
-    finally { setToggling(false); }
-  };
-
-  const handleIntervalChange = async (minutes: string) => {
-    setChangingInterval(true);
-    try {
-      const res = await fetch('/api/git-control', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'auto-push-interval', intervalMinutes: parseInt(minutes) }), credentials: 'include',
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast({ title: 'Interval Diubah', description: data.message });
-        fetchAutoStatus();
-      } else {
-        toast({ title: 'Gagal', description: data.error, variant: 'destructive' });
-      }
-    } catch { toast({ title: 'Error', description: 'Gagal mengubah interval', variant: 'destructive' }); }
-    finally { setChangingInterval(false); }
-  };
-
-  const formatTime = (isoTime: string | null) => {
-    if (!isoTime) return 'Belum pernah';
-    const d = new Date(isoTime);
-    return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
-
-  const statusIcon = () => {
-    if (!autoStatus?.lastAutoPushStatus) return <MinusCircle className="h-4 w-4 text-gray-400" />;
-    if (autoStatus.lastAutoPushStatus === 'success') return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    if (autoStatus.lastAutoPushStatus === 'no_changes') return <CheckCircle2 className="h-4 w-4 text-blue-400" />;
-    if (autoStatus.lastAutoPushStatus === 'sandbox_reset_blocked') return <ShieldAlert className="h-4 w-4 text-red-500" />;
-    return <XCircle className="h-4 w-4 text-red-500" />;
-  };
-
-  const statusText = () => {
-    if (!autoStatus?.lastAutoPushStatus) return 'Belum ada';
-    if (autoStatus.lastAutoPushStatus === 'success') return 'Berhasil';
-    if (autoStatus.lastAutoPushStatus === 'no_changes') return 'Tidak ada perubahan';
-    if (autoStatus.lastAutoPushStatus === 'sandbox_reset_blocked') return '🚨 Diblokir (Reset)';
-    return 'Gagal';
-  };
-
-  const isSandboxReset = autoStatus?.sandboxResetDetected === true;
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-4">Git Control</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-xl font-bold">Git Control</h1>
+        <Button variant="outline" size="sm" onClick={() => { setAutoPush(status.autoPush); setBranch(status.branch); setSettingsOpen(true); }}>
+          <Settings className="h-4 w-4 mr-1" /> Pengaturan
+        </Button>
+      </div>
 
-      {/* SANDBOX RESET ALERT - Most prominent */}
-      {isSandboxReset && (
-        <Alert variant="destructive" className="mb-4 border-2 border-red-500">
-          <ShieldAlert className="h-5 w-5" />
-          <AlertTitle className="text-base font-bold">🚨 TERDETEKSI SANDOX RESET!</AlertTitle>
-          <AlertDescription className="space-y-3">
-            <p className="text-sm">
-              Sandbox telah di-reset ke kondisi awal. <strong>Auto-push telah diblokir</strong> untuk melindungi data backup di GitHub.
-            </p>
-            <p className="text-sm font-medium">Pilih tindakan:</p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={handleRecovery}
-                disabled={recovering}
-                className="bg-green-600 hover:bg-green-700 text-white"
-                size="sm"
-              >
-                {recovering ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowDownToLine className="h-4 w-4 mr-2" />}
-                Pulihkan Data dari GitHub (Rekomendasi)
-              </Button>
-              <Button
-                onClick={handleForcePush}
-                disabled={forcePushing}
-                variant="destructive"
-                size="sm"
-              >
-                {forcePushing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
-                Force Push (Timpa GitHub)
-              </Button>
-              <Button
-                onClick={handleDismissSandboxReset}
-                variant="outline"
-                size="sm"
-              >
-                Abaikan & Lanjutkan
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Auto-Push Status Card */}
-      <Card className={`mb-4 border-l-4 ${isSandboxReset ? 'border-l-red-500' : 'border-l-ocean'}`}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <RefreshCw className={`h-5 w-5 ${isSandboxReset ? 'text-red-500' : 'text-ocean'}`} />
-              Auto-Push Berkala
-              {isSandboxReset && <Badge variant="destructive" className="text-xs">DIBLOKIR</Badge>}
-            </span>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="auto-push-toggle" className="text-sm font-normal text-muted-foreground">
-                {autoStatus?.enabled ? 'Aktif' : 'Nonaktif'}
-              </Label>
-              <Switch
-                id="auto-push-toggle"
-                checked={autoStatus?.enabled ?? true}
-                onCheckedChange={handleToggleAutoPush}
-                disabled={toggling}
-              />
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {isSandboxReset
-                ? 'Auto-push diblokir karena sandbox reset terdeteksi. Selesaikan peringatan di atas terlebih dahulu.'
-                : 'Otomatis menyimpan perubahan ke GitHub secara berkala. Melindungi data dari sandbox reset.'
-              }
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="flex items-center gap-2 text-sm">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Interval:</span>
-                <Select
-                  value={String(autoStatus?.intervalMinutes || 5)}
-                  onValueChange={handleIntervalChange}
-                  disabled={changingInterval || isSandboxReset}
-                >
-                  <SelectTrigger className="w-24 h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 menit</SelectItem>
-                    <SelectItem value="3">3 menit</SelectItem>
-                    <SelectItem value="5">5 menit</SelectItem>
-                    <SelectItem value="10">10 menit</SelectItem>
-                    <SelectItem value="15">15 menit</SelectItem>
-                    <SelectItem value="30">30 menit</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm">
-                {statusIcon()}
-                <span className="text-muted-foreground">Status:</span>
-                <Badge variant={autoStatus?.lastAutoPushStatus === 'sandbox_reset_blocked' || autoStatus?.lastAutoPushStatus === 'failed' ? 'destructive' : 'secondary'} className="text-xs">
-                  {statusText()}
+      {/* Connection & Status Info */}
+      <Card className="mb-4">
+        <CardContent className="p-4 space-y-3">
+          {loading ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-ocean" /></div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {status.connected ? <Wifi className="h-5 w-5 text-green-500" /> : <WifiOff className="h-5 w-5 text-red-500" />}
+                  <span className="font-medium text-sm">{status.connected ? 'GitHub Terhubung' : 'GitHub Belum Terhubung'}</span>
+                </div>
+                <Badge variant={status.connected ? 'default' : 'destructive'} className={status.connected ? 'bg-green-500' : ''}>
+                  {status.connected ? 'Aktif' : 'Tidak Aktif'}
                 </Badge>
               </div>
 
-              <div className="flex items-center gap-2 text-sm">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Terakhir:</span>
-                <span className="text-xs">{formatTime(autoStatus?.lastAutoPushTime ?? null)}</span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              <Separator />
 
-      {/* Cloudinary Storage Status */}
-      <Card className={`mb-4 border-l-4 ${cloudinaryStatus?.configured ? 'border-l-green-500' : 'border-l-amber-500'}`}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Cloud className={`h-5 w-5 ${cloudinaryStatus?.configured ? 'text-green-500' : 'text-amber-500'}`} />
-            Cloud Storage (Cloudinary)
-            {cloudinaryStatus?.configured ? (
-              <Badge className="text-xs bg-green-100 text-green-700 hover:bg-green-100">Terhubung</Badge>
-            ) : (
-              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Belum Dikonfigurasi</Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {cloudinaryStatus?.configured ? (
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Foto profil dan foto kehadiran disimpan di Cloudinary (<strong>{cloudinaryStatus.cloudName}</strong>). Database tetap ringan tanpa base64.
-              </p>
-              <div className="flex items-center gap-2 text-sm">
-                <Image className="h-4 w-4 text-green-500" alt="" />
-                <span className="text-green-600 font-medium">Penyimpanan foto aktif (cloud)</span>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <GitBranch className="h-4 w-4" /> Branch: <strong className="text-foreground">{status.branch}</strong>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Clock className="h-4 w-4" /> Auto Push: <strong className="text-foreground">{status.autoPush ? 'Aktif' : 'Nonaktif'}</strong>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Upload className="h-4 w-4" /> Push: <strong className="text-foreground">{formatTime(status.lastPush)}</strong>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Download className="h-4 w-4" /> Pull: <strong className="text-foreground">{formatTime(status.lastPull)}</strong>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Foto saat ini disimpan sebagai <strong>base64 di database</strong> — ini membuat database bengkak dan lambat.
-              </p>
-              <div className="flex items-center gap-2 text-sm">
-                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                <span className="text-amber-600 font-medium">Tidak efisien untuk production</span>
-              </div>
-              <div className="mt-2 p-3 bg-muted rounded-md text-xs space-y-1.5">
-                <p className="font-medium text-foreground">Cara mengaktifkan Cloudinary:</p>
-                <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                  <li>Daftar gratis di <strong>cloudinary.com</strong></li>
-                  <li>Dapatkan <code>Cloud Name</code>, <code>API Key</code>, <code>API Secret</code></li>
-                  <li>Tambahkan ke file <code>.neis.env</code>:</li>
-                </ol>
-                <pre className="bg-background p-2 rounded mt-1 text-[11px] overflow-x-auto">
-{`CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret`}
-                </pre>
-                <p className="text-muted-foreground">Free tier: 25 GB storage, 25 GB/bulan bandwidth</p>
-              </div>
-            </div>
+
+              {(status.hasUncommittedChanges || status.ahead > 0 || status.behind > 0) && (
+                <>
+                  <Separator />
+                  <div className="flex flex-wrap gap-2">
+                    {status.hasUncommittedChanges && (
+                      <Badge variant="outline" className="text-amber-600 border-amber-300"><AlertCircle className="h-3 w-3 mr-1" /> Ada perubahan belum disimpan</Badge>
+                    )}
+                    {status.ahead > 0 && (
+                      <Badge variant="outline" className="text-blue-600 border-blue-300"><Upload className="h-3 w-3 mr-1" /> {status.ahead} commit belum di-push</Badge>
+                    )}
+                    {status.behind > 0 && (
+                      <Badge variant="outline" className="text-orange-600 border-orange-300"><Download className="h-3 w-3 mr-1" /> {status.behind} commit belum di-pull</Badge>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {status.connected && !status.hasUncommittedChanges && status.ahead === 0 && status.behind === 0 && (
+                <div className="flex items-center gap-2 text-green-600 text-sm"><CheckCircle2 className="h-4 w-4" /> Semua sudah sinkron</div>
+              )}
+
+              {!status.connected && (
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3 text-sm">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-amber-700 dark:text-amber-400">GitHub Token belum dikonfigurasi</p>
+                      <p className="text-amber-600 dark:text-amber-500 mt-1">Hubungi administrator untuk mengatur GITHUB_TOKEN di server.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
 
-      {/* Manual Controls */}
+      {/* Push & Pull Buttons */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
         <Card>
           <CardHeader className="pb-3">
@@ -387,30 +200,15 @@ CLOUDINARY_API_SECRET=your_api_secret`}
               <Upload className="h-5 w-5 text-ocean" /> Simpan ke GitHub
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Push kode dan data terbaru ke repositori GitHub secara manual.
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              Push kode dan data terbaru ke branch <strong>{status.branch}</strong>.
             </p>
-            <Button
-              onClick={handlePush}
-              disabled={pushing}
-              className="w-full bg-ocean hover:bg-ocean-dark text-white"
-            >
+            <Button onClick={handlePush} disabled={pushing || !status.connected} className="w-full bg-ocean hover:bg-ocean-dark text-white">
               {pushing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
               {pushing ? 'Menyimpan...' : 'Simpan ke GitHub'}
             </Button>
-            {isSandboxReset && (
-              <Button
-                onClick={handleForcePush}
-                disabled={forcePushing}
-                variant="destructive"
-                className="w-full"
-                size="sm"
-              >
-                {forcePushing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <AlertTriangle className="h-4 w-4 mr-2" />}
-                Force Push (Timpa GitHub)
-              </Button>
-            )}
+            {!status.connected && <p className="text-xs text-destructive mt-2">GitHub Token belum dikonfigurasi</p>}
           </CardContent>
         </Card>
 
@@ -422,33 +220,56 @@ CLOUDINARY_API_SECRET=your_api_secret`}
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">
-              Pull kode terbaru dari repositori GitHub.
-              {isSandboxReset && <span className="text-green-600 font-medium block mt-1">✅ Gunakan tombol &quot;Pulihkan Data&quot; di atas untuk recovery lengkap!</span>}
-              {!isSandboxReset && <span className="text-destructive font-medium"> Data lokal akan ditimpa!</span>}
+              Pull kode terbaru dari branch <strong>{status.branch}</strong>.
             </p>
-            <Button
-              onClick={handlePull}
-              disabled={pulling}
-              className="w-full bg-green-600 hover:bg-green-700 text-white"
-            >
+            <Button onClick={handlePull} disabled={pulling || !status.connected} className="w-full bg-green-600 hover:bg-green-700 text-white">
               {pulling ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
               {pulling ? 'Mengambil...' : 'Ambil dari GitHub'}
             </Button>
+            {!status.connected && <p className="text-xs text-destructive mt-2">GitHub Token belum dikonfigurasi</p>}
           </CardContent>
         </Card>
       </div>
 
-      {/* Info Box */}
-      <div className="mt-4 p-4 bg-muted/50 rounded-lg border text-sm text-muted-foreground max-w-2xl">
-        <p className="font-medium text-foreground mb-2">ℹ️ Informasi Penting</p>
-        <ul className="list-disc list-inside space-y-1">
-          <li><strong>Auto-Push</strong> berjalan di background setiap {autoStatus?.intervalMinutes || 5} menit.</li>
-          <li><strong>🛡️ Sandbox Reset Protection</strong>: Jika sandbox di-reset, auto-push otomatis <strong>diblokir</strong> agar tidak merusak data di GitHub.</li>
-          <li><strong>🔄 Recovery</strong>: Setelah reset, klik <em>&quot;Pulihkan Data dari GitHub&quot;</em> → kode + database otomatis dipulihkan + halaman reload.</li>
-          <li><strong>PAT tersimpan</strong> di <code>.neis.env</code> yang ikut ter-commit, sehingga tetap ada setelah sandbox reset.</li>
-          <li><strong>Force Push</strong>: Hanya gunakan jika Anda yakin ingin menimpa data GitHub dengan data lokal saat ini.</li>
-        </ul>
-      </div>
+      {/* Settings Dialog */}
+      <Dialog open={settingsOpen} onOpenChange={(open) => { if (!saving) setSettingsOpen(open); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Pengaturan GitHub</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Branch Tujuan</Label>
+              <div className="flex gap-2">
+                {['main', 'dev'].map((b) => (
+                  <Button key={b} variant={branch === b ? 'default' : 'outline'} size="sm" onClick={() => setBranch(b)} className={branch === b ? 'bg-ocean hover:bg-ocean-dark text-white' : ''}>
+                    {b}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground"><strong>main</strong> = Production · <strong>dev</strong> = Preview</p>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <Label className="text-sm font-medium">Auto Push ke GitHub</Label>
+                <p className="text-xs text-muted-foreground">Otomatis push setiap ada perubahan kode</p>
+              </div>
+              <Switch checked={autoPush} onCheckedChange={setAutoPush} />
+            </div>
+
+            {status.connected && (
+              <div className="flex items-center gap-2 text-sm text-green-600"><CheckCircle2 className="h-4 w-4" /> GitHub Token aktif</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSettingsOpen(false)} disabled={saving}>Batal</Button>
+            <Button onClick={handleSaveConfig} disabled={saving} className="bg-ocean hover:bg-ocean-dark text-white">
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

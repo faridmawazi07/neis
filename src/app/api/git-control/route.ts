@@ -3,521 +3,179 @@ import { verifyToken } from '@/lib/auth';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 const execAsync = promisify(exec);
-
 const PROJECT_DIR = '/home/z/my-project';
-const GITHUB_USER = 'faridmawazi07';
-const GITHUB_REPO = 'faridmawazi07/neis.git';
-const AUTO_PUSH_SECRET = 'neis-internal-auto-push';
-const COMMIT_TRACK_FILE = '/home/z/my-project/.neis-last-push-commit';
-const NEIS_ENV_FILE = '/home/z/my-project/.neis.env';
+const CONFIG_PATH = join(PROJECT_DIR, '.github-config.json');
 
-// Load PAT from env var first, then fallback to .neis.env file (survives sandbox reset)
-function getGitHubPAT(): string {
-  if (process.env.NEIS_GITHUB_PAT) return process.env.NEIS_GITHUB_PAT;
+interface GitHubConfig {
+  autoPush: boolean;
+  lastPush: string | null;
+  lastPull: string | null;
+  branch: string;
+}
+
+function getConfig(): GitHubConfig {
   try {
-    if (existsSync(NEIS_ENV_FILE)) {
-      const content = readFileSync(NEIS_ENV_FILE, 'utf-8');
-      // Try direct PAT
-      const directMatch = content.match(/NEIS_GITHUB_PAT=(.+)/);
-      if (directMatch) return directMatch[1].trim();
-      // Try base64 encoded PAT
-      const b64Match = content.match(/NEIS_GITHUB_PAT_B64=(.+)/);
-      if (b64Match) return Buffer.from(b64Match[1].trim(), 'base64').toString('utf-8');
-      // Try split parts (NEIS_GH_P1 + P2 + P3)
-      const p1 = content.match(/NEIS_GH_P1=(.+)/);
-      const p2 = content.match(/NEIS_GH_P2=(.+)/);
-      const p3 = content.match(/NEIS_GH_P3=(.+)/);
-      if (p1 && p2 && p3) return p1[1].trim() + p2[1].trim() + p3[1].trim();
+    if (existsSync(CONFIG_PATH)) {
+      const raw = readFileSync(CONFIG_PATH, 'utf-8');
+      return JSON.parse(raw);
     }
   } catch {}
-  return '';
+  return { autoPush: true, lastPush: null, lastPull: null, branch: 'main' };
 }
-const GITHUB_PAT = getGitHubPAT();
 
-// ========== SANDBOX RESET DETECTION ==========
-// 
-// How it works:
-// 1. After each successful push, we save the latest commit hash to a file
-// 2. Before each push (auto or manual), we check:
-//    a. Fetch latest from GitHub
-//    b. Compare local HEAD with remote HEAD
-//    c. If local is BEHIND remote (local missing commits that GitHub has),
-//       it means either:
-//       - Sandbox was reset → local lost commits → DANGER! Don't push!
-//       - Someone pushed from elsewhere → need to pull first
-//    d. If the saved commit hash no longer exists in local history,
-//       it DEFINITELY means sandbox was reset → BLOCK push!
-//
-// This prevents a reset sandbox from destroying GitHub backup data.
+function saveConfig(config: GitHubConfig) {
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+}
 
-function getLastPushedCommit(): string | null {
+function getToken(): string {
+  return process.env.GITHUB_TOKEN || '';
+}
+
+export async function GET(req: NextRequest) {
   try {
-    if (existsSync(COMMIT_TRACK_FILE)) {
-      return readFileSync(COMMIT_TRACK_FILE, 'utf-8').trim();
-    }
-  } catch {}
-  return null;
-}
-
-function saveLastPushedCommit(commitHash: string): void {
-  try {
-    writeFileSync(COMMIT_TRACK_FILE, commitHash, 'utf-8');
-  } catch {}
-}
-
-async function getCurrentLocalCommit(): Promise<string> {
-  const { stdout } = await execAsync('git rev-parse HEAD', { cwd: PROJECT_DIR });
-  return stdout.trim();
-}
-
-async function getRemoteCommit(): Promise<string | null> {
-  try {
-    if (!GITHUB_PAT) return null;
-    const authUrl = `https://${GITHUB_USER}:${GITHUB_PAT}@github.com/${GITHUB_REPO}`;
-    await execAsync(`git remote set-url origin "${authUrl}"`, { cwd: PROJECT_DIR });
-    try {
-      await execAsync('git fetch origin main', { cwd: PROJECT_DIR, timeout: 30000 });
-      const { stdout } = await execAsync('git rev-parse origin/main', { cwd: PROJECT_DIR });
-      return stdout.trim();
-    } finally {
-      await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
-    }
-  } catch {
-    try { await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR }); } catch {}
-    return null;
-  }
-}
-
-async function isLocalBehindRemote(): Promise<{ behind: boolean; localCommit: string; remoteCommit: string | null; sandboxReset: boolean }> {
-  const localCommit = await getCurrentLocalCommit();
-  const remoteCommit = await getRemoteCommit();
-  const lastPushedCommit = getLastPushedCommit();
-
-  // If no remote or can't fetch, allow push (first time or network issue)
-  if (!remoteCommit) {
-    return { behind: false, localCommit, remoteCommit, sandboxReset: false };
-  }
-
-  // If local and remote are the same, nothing to worry about
-  if (localCommit === remoteCommit) {
-    return { behind: false, localCommit, remoteCommit, sandboxReset: false };
-  }
-
-  // Check if local is behind remote (remote has commits local doesn't)
-  try {
-    const { stdout } = await execAsync(`git log --oneline ${localCommit}..${remoteCommit}`, { cwd: PROJECT_DIR });
-    const remoteAheadCount = stdout.trim().split('\n').filter(Boolean).length;
-
-    if (remoteAheadCount > 0) {
-      // Remote is ahead of local - this could be sandbox reset
-      // Check if the last pushed commit still exists in local history
-      let sandboxReset = false;
-      if (lastPushedCommit) {
-        try {
-          const { stdout: branchCheck } = await execAsync(
-            `git branch --contains ${lastPushedCommit} 2>/dev/null`,
-            { cwd: PROJECT_DIR }
-          );
-          // If the last pushed commit is NOT in any local branch, sandbox was reset
-          sandboxReset = !branchCheck.trim().includes('main');
-        } catch {
-          // Commit doesn't exist locally at all → DEFINITELY sandbox reset
-          sandboxReset = true;
-        }
-      }
-
-      return { behind: true, localCommit, remoteCommit, sandboxReset };
-    }
-  } catch {}
-
-  // Local is ahead of remote (normal case - we have new commits to push)
-  return { behind: false, localCommit, remoteCommit, sandboxReset: false };
-}
-
-// ========== PUSH FUNCTION ==========
-
-async function pushToGitHub(commitMessage: string = 'chore: auto backup by NEIS', forceOverride: boolean = false): Promise<{ success: boolean; message: string; hadChanges: boolean; sandboxResetDetected?: boolean }> {
-  if (!GITHUB_PAT) {
-    return { success: false, message: 'GitHub PAT belum dikonfigurasi di server', hadChanges: false };
-  }
-
-  // SANDBOX RESET CHECK (skip if forceOverride for manual admin override)
-  if (!forceOverride) {
-    const check = await isLocalBehindRemote();
-    if (check.behind) {
-      if (check.sandboxReset) {
-        console.error('🚨 SANDBOX RESET DETECTED! Blocking push to protect GitHub data.');
-        return {
-          success: false,
-          message: '🚨 TERDETEKSI SANDBOX RESET! Push diblokir untuk melindungi data di GitHub. Gunakan "Ambil dari GitHub" untuk memulihkan data, atau "Force Push" jika Anda yakin ingin menimpa data GitHub.',
-          hadChanges: false,
-          sandboxResetDetected: true,
-        };
-      } else {
-        // Remote is ahead but it's not a sandbox reset (someone else pushed)
-        return {
-          success: false,
-          message: 'Remote GitHub lebih baru dari lokal. Pull terlebih dahulu sebelum push.',
-          hadChanges: false,
-        };
-      }
-    }
-  }
-
-  try {
-    await execAsync('git add .', { cwd: PROJECT_DIR });
-
-    let newCommitCreated = false;
-    let newCommitCount = 0;
-    try {
-      const { stdout } = await execAsync('git diff --cached --stat', { cwd: PROJECT_DIR });
-      if (stdout.trim()) {
-        newCommitCreated = true;
-        await execAsync(`git commit -m "${commitMessage}"`, { cwd: PROJECT_DIR });
-      }
-    } catch {
-      // commit might fail if nothing to commit, that's fine
-    }
-
-    // Count unpushed commits (including the one we just created)
-    try {
-      await execAsync('git fetch origin main', { cwd: PROJECT_DIR, timeout: 30000 });
-      const { stdout } = await execAsync('git log origin/main..HEAD --oneline', { cwd: PROJECT_DIR });
-      const unpushedLines = stdout.trim().split('\n').filter(Boolean);
-      newCommitCount = unpushedLines.length;
-    } catch {
-      // If fetch fails, assume we have unpushed commits if we just committed
-      if (newCommitCreated) newCommitCount = 1;
-    }
-
-    // Set remote URL with PAT for authentication
-    const authUrl = `https://${GITHUB_USER}:${GITHUB_PAT}@github.com/${GITHUB_REPO}`;
-    await execAsync(`git remote set-url origin "${authUrl}"`, { cwd: PROJECT_DIR });
-
-    try {
-      if (forceOverride) {
-        await execAsync('git push -u origin main --force', { cwd: PROJECT_DIR, timeout: 60000 });
-      } else {
-        await execAsync('git push -u origin main', { cwd: PROJECT_DIR, timeout: 60000 });
-      }
-      // Save the commit we just pushed
-      const newCommit = await getCurrentLocalCommit();
-      saveLastPushedCommit(newCommit);
-    } finally {
-      // Reset remote URL to remove PAT from visible config
-      await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
-    }
-
-    // Generate accurate message based on what actually happened
-    let message: string;
-    const hadChanges = newCommitCount > 0 || newCommitCreated;
-    if (newCommitCount > 0) {
-      message = `✅ ${newCommitCount} commit berhasil di-push ke GitHub!`;
-    } else if (newCommitCreated) {
-      message = '✅ Kode berhasil disimpan ke GitHub!';
-    } else {
-      message = 'Tidak ada perubahan baru. Status sudah sinkron dengan GitHub.';
-    }
-
-    return { success: true, message, hadChanges };
-  } catch (error: any) {
-    // Ensure we always reset the URL even on error
-    try {
-      await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
-    } catch {}
-    return { success: false, message: `Gagal push ke GitHub: ${error.message}`, hadChanges: false };
-  }
-}
-
-// ========== AUTO-PUSH STATE (with file persistence) ==========
-
-const AUTO_PUSH_STATE_FILE = '/home/z/my-project/.neis-auto-push-state.json';
-
-interface AutoPushState {
-  enabled: boolean;
-  intervalMinutes: number;
-  lastAutoPushTime: string | null;
-  lastAutoPushStatus: 'success' | 'failed' | 'no_changes' | 'sandbox_reset_blocked' | null;
-  sandboxResetDetected: boolean;
-}
-
-function loadAutoPushState(): AutoPushState {
-  const defaults: AutoPushState = {
-    enabled: true,
-    intervalMinutes: 5,
-    lastAutoPushTime: null,
-    lastAutoPushStatus: null,
-    sandboxResetDetected: false,
-  };
-  try {
-    if (existsSync(AUTO_PUSH_STATE_FILE)) {
-      const content = readFileSync(AUTO_PUSH_STATE_FILE, 'utf-8');
-      return { ...defaults, ...JSON.parse(content) };
-    }
-  } catch {}
-  return defaults;
-}
-
-function saveAutoPushState(state: AutoPushState): void {
-  try {
-    writeFileSync(AUTO_PUSH_STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
-  } catch {}
-}
-
-// Load state from file on startup
-let autoPushState = loadAutoPushState();
-
-// ========== API HANDLER ==========
-
-export async function POST(req: NextRequest) {
-  // Blokir semua akses Git Control di production (deploy)
-  // Git Control hanya diperlukan di development (lokal sandbox)
-  if (process.env.NODE_ENV === 'production') {
-    return NextResponse.json(
-      { error: 'Git Control tidak tersedia di versi yang sudah di-deploy. Kode dikelola melalui GitHub dan platform deploy (Vercel) secara otomatis.' },
-      { status: 403 }
-    );
-  }
-
-  try {
-    const body = await req.json();
-    const { action } = body;
-
-    // Auto-push trigger can be called by internal service with secret header
-    const isAutoPushInternal = req.headers.get('X-Auto-Push') === 'true' &&
-                                req.headers.get('Authorization')?.replace('Bearer ', '') === AUTO_PUSH_SECRET;
-
-    if (action === 'auto-push-trigger') {
-      // Internal auto-push from cron service - uses secret header instead of JWT
-      if (!isAutoPushInternal) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      if (!autoPushState.enabled) {
-        return NextResponse.json({ message: 'Auto-push dinonaktifkan', skipped: true });
-      }
-
-      // If sandbox reset was already detected, don't try again
-      if (autoPushState.sandboxResetDetected) {
-        return NextResponse.json({
-          message: '🚨 Auto-push diblokir: Sandbox reset terdeteksi! Manual admin action diperlukan.',
-          skipped: true,
-          sandboxResetDetected: true,
-        });
-      }
-
-      const timestamp = new Date().toISOString();
-      // Count changed files for more descriptive commit message
-      let changedFiles = 0;
-      try {
-        await execAsync('git add .', { cwd: PROJECT_DIR });
-        const { stdout } = await execAsync('git diff --cached --stat', { cwd: PROJECT_DIR });
-        if (stdout.trim()) {
-          const lines = stdout.trim().split('\n');
-          const lastLine = lines[lines.length - 1];
-          const match = lastLine.match(/(\d+) files? changed/);
-          if (match) changedFiles = parseInt(match[1]);
-        }
-      } catch {}
-      const commitMsg = changedFiles > 0
-        ? `chore: auto backup - ${changedFiles} file diubah (${timestamp})`
-        : `chore: auto backup ${timestamp}`;
-      const result = await pushToGitHub(commitMsg);
-      autoPushState.lastAutoPushTime = timestamp;
-
-      if (result.sandboxResetDetected) {
-        autoPushState.sandboxResetDetected = true;
-        autoPushState.lastAutoPushStatus = 'sandbox_reset_blocked';
-        saveAutoPushState(autoPushState);
-        return NextResponse.json({
-          message: result.message,
-          hadChanges: false,
-          sandboxResetDetected: true,
-        });
-      }
-
-      autoPushState.lastAutoPushStatus = result.success ? (result.hadChanges ? 'success' : 'no_changes') : 'failed';
-      saveAutoPushState(autoPushState);
-      return NextResponse.json({ message: result.message, hadChanges: result.hadChanges });
-    }
-
-    // Allow internal auto-push service to read status without JWT
-    if (action === 'auto-push-status' && isAutoPushInternal) {
-      return NextResponse.json({
-        enabled: autoPushState.enabled,
-        intervalMinutes: autoPushState.intervalMinutes,
-        lastAutoPushTime: autoPushState.lastAutoPushTime,
-        lastAutoPushStatus: autoPushState.lastAutoPushStatus,
-        sandboxResetDetected: autoPushState.sandboxResetDetected,
-      });
-    }
-
-    // All other actions require admin JWT auth
     const token = req.cookies.get('neis-token')?.value || req.headers.get('Authorization')?.replace('Bearer ', '');
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const payload = verifyToken(token);
     if (!payload) return NextResponse.json({ error: 'Token tidak valid' }, { status: 401 });
-
     if (payload.role !== 'admin') {
       return NextResponse.json({ error: 'Hanya admin yang dapat mengakses fitur ini' }, { status: 403 });
     }
 
-    if (action === 'push') {
-      // Count changed files for more descriptive commit message
-      let changedFiles = 0;
+    const config = getConfig();
+    const gitToken = getToken();
+    let hasUncommittedChanges = false;
+    let currentBranch = 'main';
+    let ahead = 0;
+    let behind = 0;
+
+    try {
+      const { stdout } = await execAsync('git status --porcelain', { cwd: PROJECT_DIR });
+      hasUncommittedChanges = stdout.trim().length > 0;
+    } catch {}
+
+    try {
+      const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: PROJECT_DIR });
+      currentBranch = stdout.trim();
+    } catch {}
+
+    if (gitToken) {
       try {
-        const { stdout } = await execAsync('git diff --stat HEAD', { cwd: PROJECT_DIR });
-        if (stdout.trim()) {
-          const lines = stdout.trim().split('\n');
-          const lastLine = lines[lines.length - 1];
-          const match = lastLine.match(/(\d+) files? changed/);
-          if (match) changedFiles = parseInt(match[1]);
-        }
+        await execAsync('git fetch origin', { cwd: PROJECT_DIR, timeout: 30000 });
       } catch {}
-      const commitMsg = changedFiles > 0
-        ? `chore: manual backup by Admin - ${changedFiles} file diubah`
-        : 'chore: manual backup by Admin';
-      const result = await pushToGitHub(commitMsg);
-      if (result.sandboxResetDetected) {
-        return NextResponse.json({
-          error: result.message,
-          sandboxResetDetected: true,
-        }, { status: 409 }); // 409 Conflict
-      }
-      if (!result.success) {
-        return NextResponse.json({ error: result.message }, { status: 500 });
-      }
-      return NextResponse.json({ message: result.message, hadChanges: result.hadChanges });
-    } else if (action === 'force-push') {
-      // Admin explicitly wants to overwrite GitHub - use with caution
-      const result = await pushToGitHub('chore: force backup by Admin (override)', true);
-      if (result.success) {
-        // Reset sandbox reset flag since admin chose to force push
-        autoPushState.sandboxResetDetected = false;
-        saveAutoPushState(autoPushState);
-      }
-      if (!result.success) {
-        return NextResponse.json({ error: result.message }, { status: 500 });
-      }
-      return NextResponse.json({
-        message: result.hadChanges
-          ? '⚠️ Force push berhasil! Data GitHub telah ditimpa dengan data lokal.'
-          : 'Tidak ada perubahan baru.',
-        hadChanges: result.hadChanges,
-      });
-    } else if (action === 'pull') {
-      if (!GITHUB_PAT) {
-        return NextResponse.json({ error: 'GitHub PAT belum dikonfigurasi di server' }, { status: 500 });
-      }
-      try {
-        const authUrl = `https://${GITHUB_USER}:${GITHUB_PAT}@github.com/${GITHUB_REPO}`;
-        await execAsync(`git remote set-url origin "${authUrl}"`, { cwd: PROJECT_DIR });
+    }
 
+    try {
+      const { stdout } = await execAsync(`git rev-list --left-right --count origin/${config.branch}...HEAD`, { cwd: PROJECT_DIR });
+      const parts = stdout.trim().split(/\s+/);
+      ahead = parseInt(parts[0] || '0');
+      behind = parseInt(parts[1] || '0');
+    } catch {}
+
+    return NextResponse.json({
+      connected: !!gitToken,
+      autoPush: config.autoPush,
+      lastPush: config.lastPush,
+      lastPull: config.lastPull,
+      branch: config.branch,
+      currentBranch,
+      hasUncommittedChanges,
+      ahead,
+      behind,
+    });
+  } catch (error) {
+    console.error('Git control GET error:', error);
+    return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const token = req.cookies.get('neis-token')?.value || req.headers.get('Authorization')?.replace('Bearer ', '');
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const payload = verifyToken(token);
+    if (!payload) return NextResponse.json({ error: 'Token tidak valid' }, { status: 401 });
+    if (payload.role !== 'admin') {
+      return NextResponse.json({ error: 'Hanya admin yang dapat mengakses fitur ini' }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const { action } = body;
+    const gitToken = getToken();
+
+    if (action === 'save-config') {
+      const config = getConfig();
+      if (body.autoPush !== undefined) config.autoPush = body.autoPush;
+      if (body.branch !== undefined) config.branch = body.branch;
+      saveConfig(config);
+      return NextResponse.json({ message: 'Konfigurasi berhasil disimpan', connected: !!gitToken });
+    }
+
+    if (action === 'push') {
+      if (!gitToken) {
+        return NextResponse.json({ error: 'GitHub Token belum dikonfigurasi. Hubungi administrator.' }, { status: 400 });
+      }
+
+      try {
+        // Set remote URL with token for push
+        await execAsync(`git remote set-url origin https://${gitToken}@github.com/faridmawazi07/neis.git`, { cwd: PROJECT_DIR });
+
+        // Add and commit
+        await execAsync('git add .', { cwd: PROJECT_DIR });
         try {
-          await execAsync('git fetch --all', { cwd: PROJECT_DIR, timeout: 60000 });
-          await execAsync('git reset --hard origin/main', { cwd: PROJECT_DIR });
-          // After pull, save the new commit and reset sandbox flag
-          const newCommit = await getCurrentLocalCommit();
-          saveLastPushedCommit(newCommit);
-          autoPushState.sandboxResetDetected = false;
-          saveAutoPushState(autoPushState);
-        } finally {
-          await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
+          const timestamp = new Date().toLocaleString('id-ID');
+          await execAsync(`git commit -m "chore: auto backup - ${timestamp}"`, { cwd: PROJECT_DIR });
+        } catch (e: any) {
+          if (!e.message?.includes('nothing to commit')) throw e;
         }
 
-        return NextResponse.json({ message: 'Kode berhasil diambil dari GitHub! Data lokal telah dipulihkan.' });
+        // Push
+        await execAsync(`git push -u origin ${getConfig().branch}`, { cwd: PROJECT_DIR, timeout: 120000 });
+
+        // Reset remote URL to hide token
+        await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
+
+        const config = getConfig();
+        config.lastPush = new Date().toISOString();
+        saveConfig(config);
+
+        return NextResponse.json({ message: `Kode berhasil disimpan ke GitHub (branch: ${config.branch})!` });
+      } catch (error: any) {
+        // Always reset remote URL
+        try {
+          await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
+        } catch {}
+        return NextResponse.json({ error: `Gagal push ke GitHub: ${error.message}` }, { status: 500 });
+      }
+    }
+
+    if (action === 'pull') {
+      if (!gitToken) {
+        return NextResponse.json({ error: 'GitHub Token belum dikonfigurasi. Hubungi administrator.' }, { status: 400 });
+      }
+
+      try {
+        // Set remote URL with token for fetch
+        await execAsync(`git remote set-url origin https://${gitToken}@github.com/faridmawazi07/neis.git`, { cwd: PROJECT_DIR });
+
+        await execAsync('git fetch --all', { cwd: PROJECT_DIR, timeout: 120000 });
+        const config = getConfig();
+        await execAsync(`git reset --hard origin/${config.branch}`, { cwd: PROJECT_DIR });
+
+        // Reset remote URL
+        await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
+
+        config.lastPull = new Date().toISOString();
+        saveConfig(config);
+
+        return NextResponse.json({ message: `Kode berhasil diambil dari GitHub (branch: ${config.branch})!` });
       } catch (error: any) {
         try {
-          await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
+          await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
         } catch {}
         return NextResponse.json({ error: `Gagal pull dari GitHub: ${error.message}` }, { status: 500 });
-      }
-    } else if (action === 'auto-push-status') {
-      return NextResponse.json({
-        enabled: autoPushState.enabled,
-        intervalMinutes: autoPushState.intervalMinutes,
-        lastAutoPushTime: autoPushState.lastAutoPushTime,
-        lastAutoPushStatus: autoPushState.lastAutoPushStatus,
-        sandboxResetDetected: autoPushState.sandboxResetDetected,
-      });
-    } else if (action === 'auto-push-toggle') {
-      autoPushState.enabled = body.enabled ?? !autoPushState.enabled;
-      saveAutoPushState(autoPushState);
-      return NextResponse.json({
-        enabled: autoPushState.enabled,
-        message: autoPushState.enabled ? 'Auto-push diaktifkan' : 'Auto-push dinonaktifkan',
-      });
-    } else if (action === 'auto-push-interval') {
-      const newInterval = body.intervalMinutes;
-      if (newInterval && newInterval >= 1 && newInterval <= 60) {
-        autoPushState.intervalMinutes = newInterval;
-        saveAutoPushState(autoPushState);
-        return NextResponse.json({ intervalMinutes: autoPushState.intervalMinutes, message: `Interval auto-push diubah ke ${autoPushState.intervalMinutes} menit` });
-      }
-      return NextResponse.json({ error: 'Interval harus antara 1-60 menit' }, { status: 400 });
-    } else if (action === 'dismiss-sandbox-reset') {
-      // Admin acknowledges the reset and wants to start fresh
-      autoPushState.sandboxResetDetected = false;
-      saveAutoPushState(autoPushState);
-      const currentCommit = await getCurrentLocalCommit();
-      saveLastPushedCommit(currentCommit);
-      return NextResponse.json({ message: 'Peringatan sandbox reset diabaikan. Auto-push akan berjalan normal lagi.' });
-    } else if (action === 'recovery') {
-      // Full recovery: pull from GitHub + re-seed database
-      if (!GITHUB_PAT) {
-        return NextResponse.json({ error: 'GitHub PAT belum dikonfigurasi. Tidak bisa memulihkan data.' }, { status: 500 });
-      }
-      try {
-        // Step 1: Pull latest code from GitHub
-        const authUrl = `https://${GITHUB_USER}:${GITHUB_PAT}@github.com/${GITHUB_REPO}`;
-        await execAsync(`git remote set-url origin "${authUrl}"`, { cwd: PROJECT_DIR });
-
-        try {
-          await execAsync('git fetch --all', { cwd: PROJECT_DIR, timeout: 60000 });
-          await execAsync('git reset --hard origin/main', { cwd: PROJECT_DIR });
-        } finally {
-          await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
-        }
-
-        // Step 2: Install dependencies (in case new packages were added)
-        try { await execAsync('bun install', { cwd: PROJECT_DIR, timeout: 120000 }); } catch {}
-
-        // Step 3: Push database schema
-        try { await execAsync('bun run db:push', { cwd: PROJECT_DIR, timeout: 30000 }); } catch {}
-
-        // Step 4: Update commit tracking
-        const newCommit = await getCurrentLocalCommit();
-        saveLastPushedCommit(newCommit);
-        autoPushState.sandboxResetDetected = false;
-        saveAutoPushState(autoPushState);
-
-        return NextResponse.json({
-          message: '✅ Pemulihan berhasil! Kode dan database telah dipulihkan dari GitHub. Halaman akan dimuat ulang.',
-          recovered: true,
-        });
-      } catch (error: any) {
-        try {
-          await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
-        } catch {}
-        return NextResponse.json({ error: `Gagal memulihkan data: ${error.message}` }, { status: 500 });
-      }
-    } else if (action === 'check-recovery') {
-      // Check if recovery is needed (compare local vs remote)
-      if (!GITHUB_PAT) {
-        return NextResponse.json({ patAvailable: false, recoveryNeeded: false });
-      }
-      try {
-        const check = await isLocalBehindRemote();
-        return NextResponse.json({
-          patAvailable: true,
-          recoveryNeeded: check.behind,
-          sandboxReset: check.sandboxReset,
-          localCommit: check.localCommit,
-          remoteCommit: check.remoteCommit,
-        });
-      } catch {
-        return NextResponse.json({ patAvailable: true, recoveryNeeded: false, error: 'Gagal cek status' });
       }
     }
 
