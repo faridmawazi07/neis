@@ -18,6 +18,8 @@ import {
 import { Plus, Edit, Trash2, CalendarIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/neis/pagination-bar';
 
 // ─── Hari Component ────────────────────────────────────────────────
 export function HariMaster() {
@@ -30,6 +32,7 @@ export function HariMaster() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const pagination = usePagination(data.length);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -76,7 +79,15 @@ export function HariMaster() {
   };
 
   const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  const toggleAll = () => setSelectedIds(prev => prev.length === data.length ? [] : data.map((d: any) => d.id));
+  const toggleAll = () => {
+    const pageIds = pagination.paginatedData(data).map((d: any) => d.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id: string) => selectedIds.includes(id));
+    if (allPageSelected) {
+      setSelectedIds(prev => prev.filter(i => !pageIds.includes(i)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
+    }
+  };
 
   return (
     <div>
@@ -94,24 +105,40 @@ export function HariMaster() {
         </div>
       </div>
       <Card><CardContent className="p-0">
-        {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
-        data.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p> :
-        <div className="overflow-x-auto"><Table>
-          <TableHeader><TableRow>
-            <TableHead className="w-10"><Checkbox checked={selectedIds.length === data.length && data.length > 0} onCheckedChange={toggleAll} /></TableHead>
-            <TableHead>Nama Hari</TableHead><TableHead>Aksi</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>{data.map((d: any) => (
-            <TableRow key={d.id}>
-              <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
-              <TableCell>{d.nama_hari}</TableCell>
-              <TableCell><div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-              </div></TableCell>
-            </TableRow>
-          ))}</TableBody>
-        </Table></div>}
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto"><Table>
+              <TableHeader><TableRow>
+                <TableHead className="w-10"><Checkbox checked={pagination.paginatedData(data).length > 0 && pagination.paginatedData(data).every((d: any) => selectedIds.includes(d.id))} onCheckedChange={toggleAll} /></TableHead>
+                <TableHead>Nama Hari</TableHead><TableHead>Aksi</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>{pagination.paginatedData(data).map((d: any) => (
+                <TableRow key={d.id}>
+                  <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
+                  <TableCell>{d.nama_hari}</TableCell>
+                  <TableCell><div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  </div></TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table></div>
+            <PaginationBar
+              pageSize={pagination.pageSize}
+              onPageSizeChange={pagination.setPageSize}
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={data.length}
+              pageStart={pagination.pageStart}
+              pageEnd={pagination.pageEnd}
+              onPageChange={pagination.setCurrentPage}
+            />
+          </>
+        )}
       </CardContent></Card>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}><DialogContent className="max-w-sm">
@@ -144,6 +171,7 @@ export function KelasMaster() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const pagination = usePagination(data.length);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -186,7 +214,15 @@ export function KelasMaster() {
 
   const handleBulkDelete = async () => { for (const id of selectedIds) { await handleDelete(id); } setSelectedIds([]); setBulkDeleteOpen(false); };
   const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  const toggleAll = () => setSelectedIds(prev => prev.length === data.length ? [] : data.map((d: any) => d.id));
+  const toggleAll = () => {
+    const pageIds = pagination.paginatedData(data).map((d: any) => d.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id: string) => selectedIds.includes(id));
+    if (allPageSelected) {
+      setSelectedIds(prev => prev.filter(i => !pageIds.includes(i)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
+    }
+  };
 
   return (
     <div>
@@ -198,24 +234,40 @@ export function KelasMaster() {
         </div>
       </div>
       <Card><CardContent className="p-0">
-        {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
-        data.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p> :
-        <div className="overflow-x-auto"><Table>
-          <TableHeader><TableRow>
-            <TableHead className="w-10"><Checkbox checked={selectedIds.length === data.length && data.length > 0} onCheckedChange={toggleAll} /></TableHead>
-            <TableHead>Nama Kelas</TableHead><TableHead>Aksi</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>{data.map((d: any) => (
-            <TableRow key={d.id}>
-              <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
-              <TableCell>{d.nama_kelas}</TableCell>
-              <TableCell><div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-              </div></TableCell>
-            </TableRow>
-          ))}</TableBody>
-        </Table></div>}
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto"><Table>
+              <TableHeader><TableRow>
+                <TableHead className="w-10"><Checkbox checked={pagination.paginatedData(data).length > 0 && pagination.paginatedData(data).every((d: any) => selectedIds.includes(d.id))} onCheckedChange={toggleAll} /></TableHead>
+                <TableHead>Nama Kelas</TableHead><TableHead>Aksi</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>{pagination.paginatedData(data).map((d: any) => (
+                <TableRow key={d.id}>
+                  <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
+                  <TableCell>{d.nama_kelas}</TableCell>
+                  <TableCell><div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  </div></TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table></div>
+            <PaginationBar
+              pageSize={pagination.pageSize}
+              onPageSizeChange={pagination.setPageSize}
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={data.length}
+              pageStart={pagination.pageStart}
+              pageEnd={pagination.pageEnd}
+              onPageChange={pagination.setCurrentPage}
+            />
+          </>
+        )}
       </CardContent></Card>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}><DialogContent className="max-w-sm">
@@ -248,6 +300,7 @@ export function MapelMaster() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const pagination = usePagination(data.length);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -290,7 +343,15 @@ export function MapelMaster() {
 
   const handleBulkDelete = async () => { for (const id of selectedIds) { await handleDelete(id); } setSelectedIds([]); setBulkDeleteOpen(false); };
   const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  const toggleAll = () => setSelectedIds(prev => prev.length === data.length ? [] : data.map((d: any) => d.id));
+  const toggleAll = () => {
+    const pageIds = pagination.paginatedData(data).map((d: any) => d.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id: string) => selectedIds.includes(id));
+    if (allPageSelected) {
+      setSelectedIds(prev => prev.filter(i => !pageIds.includes(i)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
+    }
+  };
 
   return (
     <div>
@@ -302,24 +363,40 @@ export function MapelMaster() {
         </div>
       </div>
       <Card><CardContent className="p-0">
-        {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
-        data.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p> :
-        <div className="overflow-x-auto"><Table>
-          <TableHeader><TableRow>
-            <TableHead className="w-10"><Checkbox checked={selectedIds.length === data.length && data.length > 0} onCheckedChange={toggleAll} /></TableHead>
-            <TableHead>Nama Mapel</TableHead><TableHead>Aksi</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>{data.map((d: any) => (
-            <TableRow key={d.id}>
-              <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
-              <TableCell>{d.nama_mapel}</TableCell>
-              <TableCell><div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-              </div></TableCell>
-            </TableRow>
-          ))}</TableBody>
-        </Table></div>}
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto"><Table>
+              <TableHeader><TableRow>
+                <TableHead className="w-10"><Checkbox checked={pagination.paginatedData(data).length > 0 && pagination.paginatedData(data).every((d: any) => selectedIds.includes(d.id))} onCheckedChange={toggleAll} /></TableHead>
+                <TableHead>Nama Mapel</TableHead><TableHead>Aksi</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>{pagination.paginatedData(data).map((d: any) => (
+                <TableRow key={d.id}>
+                  <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
+                  <TableCell>{d.nama_mapel}</TableCell>
+                  <TableCell><div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  </div></TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table></div>
+            <PaginationBar
+              pageSize={pagination.pageSize}
+              onPageSizeChange={pagination.setPageSize}
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={data.length}
+              pageStart={pagination.pageStart}
+              pageEnd={pagination.pageEnd}
+              onPageChange={pagination.setCurrentPage}
+            />
+          </>
+        )}
       </CardContent></Card>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}><DialogContent className="max-w-sm">
@@ -352,6 +429,7 @@ export function StatusKehadiranMaster() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const pagination = usePagination(data.length);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -394,7 +472,15 @@ export function StatusKehadiranMaster() {
 
   const handleBulkDelete = async () => { for (const id of selectedIds) { await handleDelete(id); } setSelectedIds([]); setBulkDeleteOpen(false); };
   const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  const toggleAll = () => setSelectedIds(prev => prev.length === data.length ? [] : data.map((d: any) => d.id));
+  const toggleAll = () => {
+    const pageIds = pagination.paginatedData(data).map((d: any) => d.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every((id: string) => selectedIds.includes(id));
+    if (allPageSelected) {
+      setSelectedIds(prev => prev.filter(i => !pageIds.includes(i)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...pageIds])]);
+    }
+  };
 
   return (
     <div>
@@ -406,24 +492,40 @@ export function StatusKehadiranMaster() {
         </div>
       </div>
       <Card><CardContent className="p-0">
-        {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
-        data.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p> :
-        <div className="overflow-x-auto"><Table>
-          <TableHeader><TableRow>
-            <TableHead className="w-10"><Checkbox checked={selectedIds.length === data.length && data.length > 0} onCheckedChange={toggleAll} /></TableHead>
-            <TableHead>Nama Status</TableHead><TableHead>Aksi</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>{data.map((d: any) => (
-            <TableRow key={d.id}>
-              <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
-              <TableCell>{d.nama_status}</TableCell>
-              <TableCell><div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-              </div></TableCell>
-            </TableRow>
-          ))}</TableBody>
-        </Table></div>}
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto"><Table>
+              <TableHeader><TableRow>
+                <TableHead className="w-10"><Checkbox checked={pagination.paginatedData(data).length > 0 && pagination.paginatedData(data).every((d: any) => selectedIds.includes(d.id))} onCheckedChange={toggleAll} /></TableHead>
+                <TableHead>Nama Status</TableHead><TableHead>Aksi</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>{pagination.paginatedData(data).map((d: any) => (
+                <TableRow key={d.id}>
+                  <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
+                  <TableCell>{d.nama_status}</TableCell>
+                  <TableCell><div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  </div></TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table></div>
+            <PaginationBar
+              pageSize={pagination.pageSize}
+              onPageSizeChange={pagination.setPageSize}
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={data.length}
+              pageStart={pagination.pageStart}
+              pageEnd={pagination.pageEnd}
+              onPageChange={pagination.setCurrentPage}
+            />
+          </>
+        )}
       </CardContent></Card>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}><DialogContent className="max-w-sm">
@@ -455,6 +557,7 @@ export function HariLiburMaster() {
   const [formTanggal, setFormTanggal] = useState<Date>();
   const [formKeterangan, setFormKeterangan] = useState('');
   const [deleteTanggal, setDeleteTanggal] = useState<string | null>(null);
+  const pagination = usePagination(data.length);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -483,7 +586,7 @@ export function HariLiburMaster() {
       const res = await fetch('/api/hari-libur', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'include' });
       const data = await res.json();
       if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
-      toast({ title: 'Berhasil', description: editData ? 'Hari libur berhasil diperbarui' : 'Hari libur berhasil ditambahkan' });
+      toast({ title: 'Berhasil', description: editData ? 'Hari libur berhasil diperbarui' : 'Hari Libur berhasil ditambahkan' });
       setFormOpen(false); fetchData();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
   };
@@ -506,21 +609,37 @@ export function HariLiburMaster() {
         <Button onClick={openAdd} size="sm" className="bg-ocean hover:bg-ocean-dark text-white"><Plus className="h-4 w-4 mr-1" /> Tambah</Button>
       </div>
       <Card><CardContent className="p-0">
-        {loading ? <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div> :
-        data.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p> :
-        <div className="overflow-x-auto"><Table>
-          <TableHeader><TableRow><TableHead>Tanggal</TableHead><TableHead>Keterangan</TableHead><TableHead>Aksi</TableHead></TableRow></TableHeader>
-          <TableBody>{data.map((d: any) => (
-            <TableRow key={d.tanggal}>
-              <TableCell>{d.tanggal}</TableCell>
-              <TableCell>{d.keterangan}</TableCell>
-              <TableCell><div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteTanggal(d.tanggal)}><Trash2 className="h-3.5 w-3.5" /></Button>
-              </div></TableCell>
-            </TableRow>
-          ))}</TableBody>
-        </Table></div>}
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-ocean" /></div>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto"><Table>
+              <TableHeader><TableRow><TableHead>Tanggal</TableHead><TableHead>Keterangan</TableHead><TableHead>Aksi</TableHead></TableRow></TableHeader>
+              <TableBody>{pagination.paginatedData(data).map((d: any) => (
+                <TableRow key={d.tanggal}>
+                  <TableCell>{d.tanggal}</TableCell>
+                  <TableCell>{d.keterangan}</TableCell>
+                  <TableCell><div className="flex gap-1">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteTanggal(d.tanggal)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  </div></TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table></div>
+            <PaginationBar
+              pageSize={pagination.pageSize}
+              onPageSizeChange={pagination.setPageSize}
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              totalItems={data.length}
+              pageStart={pagination.pageStart}
+              pageEnd={pagination.pageEnd}
+              onPageChange={pagination.setCurrentPage}
+            />
+          </>
+        )}
       </CardContent></Card>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}><DialogContent className="max-w-sm">
