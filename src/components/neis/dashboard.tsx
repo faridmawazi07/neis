@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   XCircle,
   PartyPopper,
+  List,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -350,16 +351,22 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
             </Popover>
             <div className="flex items-center gap-1 text-xs">
               <button
-                className={`flex items-center gap-1 px-2 py-1 rounded ${jadwalFilter === 'sudah' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400' : 'hover:bg-accent'}`}
-                onClick={() => setJadwalFilter(jadwalFilter === 'sudah' ? 'all' : 'sudah')}
+                className={`flex items-center gap-1 px-2 py-1 rounded ${jadwalFilter === 'all' ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium' : 'hover:bg-accent'}`}
+                onClick={() => setJadwalFilter('all')}
               >
-                <CheckCircle2 className="h-3 w-3" /> <span className="text-green-600">✓ : Sudah Mengajar</span>
+                <List className="h-3 w-3" /> <span>Tampilkan Semua</span>
               </button>
               <button
-                className={`flex items-center gap-1 px-2 py-1 rounded ${jadwalFilter === 'belum' ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400' : 'hover:bg-accent'}`}
-                onClick={() => setJadwalFilter(jadwalFilter === 'belum' ? 'all' : 'belum')}
+                className={`flex items-center gap-1 px-2 py-1 rounded ${jadwalFilter === 'sudah' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400 font-medium' : 'hover:bg-accent'}`}
+                onClick={() => setJadwalFilter('sudah')}
               >
-                <XCircle className="h-3 w-3" /> <span className="text-red-600">✗ : Tidak Mengajar</span>
+                <CheckCircle2 className="h-3 w-3" /> <span className="text-green-600 dark:text-green-400">✓ Sudah Mengajar</span>
+              </button>
+              <button
+                className={`flex items-center gap-1 px-2 py-1 rounded ${jadwalFilter === 'belum' ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400 font-medium' : 'hover:bg-accent'}`}
+                onClick={() => setJadwalFilter('belum')}
+              >
+                <XCircle className="h-3 w-3" /> <span className="text-red-600 dark:text-red-400">✗ Tidak Mengajar</span>
               </button>
             </div>
           </div>
