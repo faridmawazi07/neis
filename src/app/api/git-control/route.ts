@@ -31,16 +31,35 @@ function saveConfig(config: GitHubConfig) {
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
-function getGitHubPAT(): string {
-  if (process.env.NEIS_GITHUB_PAT) return process.env.NEIS_GITHUB_PAT;
-  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+/**
+ * Read a value from .neis.env file (survives sandbox resets)
+ */
+function getNeisEnvValue(key: string): string {
   try {
     if (existsSync(NEIS_ENV_FILE)) {
       const content = readFileSync(NEIS_ENV_FILE, 'utf-8');
+      const match = content.match(new RegExp(`^${key}=(.+)$`, 'm'));
+      if (match) return match[1].trim();
+    }
+  } catch {}
+  return '';
+}
+
+function getGitHubPAT(): string {
+  // Try process.env first
+  if (process.env.NEIS_GITHUB_PAT) return process.env.NEIS_GITHUB_PAT;
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
+  // Read from .neis.env
+  try {
+    if (existsSync(NEIS_ENV_FILE)) {
+      const content = readFileSync(NEIS_ENV_FILE, 'utf-8');
+      // Direct PAT
       const directMatch = content.match(/NEIS_GITHUB_PAT=(.+)/);
       if (directMatch) return directMatch[1].trim();
+      // Base64 encoded
       const b64Match = content.match(/NEIS_GITHUB_PAT_B64=(.+)/);
       if (b64Match) return Buffer.from(b64Match[1].trim(), 'base64').toString('utf-8');
+      // Fragmented
       const p1 = content.match(/NEIS_GH_P1=(.+)/);
       const p2 = content.match(/NEIS_GH_P2=(.+)/);
       const p3 = content.match(/NEIS_GH_P3=(.+)/);
@@ -48,6 +67,19 @@ function getGitHubPAT(): string {
     }
   } catch {}
   return '';
+}
+
+function getCloudinaryConfig(): { cloudName: string; apiKey: string; apiSecret: string } {
+  // Try process.env first, then .neis.env
+  let cloudName = process.env.CLOUDINARY_CLOUD_NAME || '';
+  let apiKey = process.env.CLOUDINARY_API_KEY || '';
+  let apiSecret = process.env.CLOUDINARY_API_SECRET || '';
+
+  if (!cloudName) cloudName = getNeisEnvValue('CLOUDINARY_CLOUD_NAME');
+  if (!apiKey) apiKey = getNeisEnvValue('CLOUDINARY_API_KEY');
+  if (!apiSecret) apiSecret = getNeisEnvValue('CLOUDINARY_API_SECRET');
+
+  return { cloudName, apiKey, apiSecret };
 }
 
 function isAdmin(req: NextRequest): { authorized: boolean; isAutoPush: boolean } {
@@ -63,9 +95,7 @@ function isAdmin(req: NextRequest): { authorized: boolean; isAutoPush: boolean }
 
 async function getCloudinaryUsage() {
   try {
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || '';
-    const apiKey = process.env.CLOUDINARY_API_KEY || '';
-    const apiSecret = process.env.CLOUDINARY_API_SECRET || '';
+    const { cloudName, apiKey, apiSecret } = getCloudinaryConfig();
 
     if (!cloudName || !apiKey || !apiSecret) {
       return { configured: false };
@@ -117,6 +147,46 @@ async function getCloudinaryUsage() {
   }
 }
 
+/**
+ * Push current HEAD to the target branch on GitHub.
+ * Uses `git push origin HEAD:targetBranch` so it works regardless of
+ * which local branch we're currently on.
+ */
+async function doPush(gitToken: string, targetBranch: string, commitPrefix: string): Promise<{ success: boolean; message: string; nothingNew?: boolean }> {
+  try {
+    await execAsync(`git remote set-url origin https://${gitToken}@github.com/faridmawazi07/neis.git`, { cwd: PROJECT_DIR });
+
+    // Stage all changes
+    await execAsync('git add .', { cwd: PROJECT_DIR });
+
+    // Try to commit
+    let nothingNew = false;
+    try {
+      const ts = new Date().toISOString();
+      await execAsync(`git commit -m "${commitPrefix} - ${ts}"`, { cwd: PROJECT_DIR });
+    } catch (e: any) {
+      const msg = e.message || '';
+      if (msg.includes('nothing to commit') || msg.includes('no changes added')) {
+        nothingNew = true;
+      } else {
+        throw e;
+      }
+    }
+
+    // Push current HEAD to target branch (works from any local branch)
+    await execAsync(`git push origin HEAD:${targetBranch}`, { cwd: PROJECT_DIR, timeout: 120000 });
+
+    // Reset remote URL to remove token
+    await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
+
+    return { success: true, message: `Berhasil push ke GitHub (branch: ${targetBranch})`, nothingNew };
+  } catch (error: any) {
+    // Always reset remote URL on error
+    try { await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR }); } catch {}
+    throw error;
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { authorized } = isAdmin(req);
@@ -149,6 +219,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Compare current HEAD with the target remote branch
     try {
       const { stdout } = await execAsync(`git rev-list --left-right --count origin/${config.branch}...HEAD`, { cwd: PROJECT_DIR });
       const parts = stdout.trim().split(/\s+/);
@@ -193,23 +264,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ skipped: true, message: !config.autoPush ? 'Auto-push dinonaktifkan' : 'Token tidak tersedia' });
       }
       try {
-        await execAsync(`git remote set-url origin https://${gitToken}@github.com/faridmawazi07/neis.git`, { cwd: PROJECT_DIR });
-        await execAsync('git add .', { cwd: PROJECT_DIR });
-        try {
-          const ts = new Date().toISOString();
-          await execAsync(`git commit -m "chore: auto backup - ${ts}"`, { cwd: PROJECT_DIR });
-        } catch (e: any) {
-          if (!e.message?.includes('nothing to commit')) throw e;
-          await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
-          return NextResponse.json({ skipped: true, message: 'Tidak ada perubahan baru' });
-        }
-        await execAsync(`git push -u origin ${config.branch}`, { cwd: PROJECT_DIR, timeout: 120000 });
-        await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
+        const result = await doPush(gitToken, config.branch, 'chore: auto backup');
         config.lastPush = new Date().toISOString();
         saveConfig(config);
-        return NextResponse.json({ message: `Auto-push berhasil (branch: ${config.branch})` });
+        if (result.nothingNew) {
+          return NextResponse.json({ skipped: true, message: 'Tidak ada perubahan baru' });
+        }
+        return NextResponse.json({ message: result.message });
       } catch (error: any) {
-        try { await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR }); } catch {}
         return NextResponse.json({ error: `Auto-push gagal: ${error.message}` }, { status: 500 });
       }
     }
@@ -235,22 +297,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'GitHub Token belum dikonfigurasi. Hubungi administrator.' }, { status: 400 });
       }
       try {
-        await execAsync(`git remote set-url origin https://${gitToken}@github.com/faridmawazi07/neis.git`, { cwd: PROJECT_DIR });
-        await execAsync('git add .', { cwd: PROJECT_DIR });
-        try {
-          const timestamp = new Date().toLocaleString('id-ID');
-          await execAsync(`git commit -m "chore: manual backup - ${timestamp}"`, { cwd: PROJECT_DIR });
-        } catch (e: any) {
-          if (!e.message?.includes('nothing to commit')) throw e;
-        }
         const config = getConfig();
-        await execAsync(`git push -u origin ${config.branch}`, { cwd: PROJECT_DIR, timeout: 120000 });
-        await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
+        const result = await doPush(gitToken, config.branch, 'chore: manual backup');
         config.lastPush = new Date().toISOString();
         saveConfig(config);
+        if (result.nothingNew) {
+          return NextResponse.json({ message: `Tidak ada perubahan baru, branch ${config.branch} sudah terbaru` });
+        }
         return NextResponse.json({ message: `Kode berhasil disimpan ke GitHub (branch: ${config.branch})!` });
       } catch (error: any) {
-        try { await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR }); } catch {}
         return NextResponse.json({ error: `Gagal push ke GitHub: ${error.message}` }, { status: 500 });
       }
     }
@@ -264,6 +319,7 @@ export async function POST(req: NextRequest) {
         await execAsync(`git remote set-url origin https://${gitToken}@github.com/faridmawazi07/neis.git`, { cwd: PROJECT_DIR });
         await execAsync('git fetch --all', { cwd: PROJECT_DIR, timeout: 120000 });
         const config = getConfig();
+        // Reset current HEAD to match the remote target branch
         await execAsync(`git reset --hard origin/${config.branch}`, { cwd: PROJECT_DIR });
         await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
         config.lastPull = new Date().toISOString();

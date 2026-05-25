@@ -49,7 +49,6 @@ export async function register() {
     let currentIntervalMinutes = 5;
 
     async function triggerAutoPush(): Promise<void> {
-      const timestamp = new Date().toISOString();
       try {
         const res = await fetch('http://localhost:3000/api/git-control', {
           method: 'POST',
