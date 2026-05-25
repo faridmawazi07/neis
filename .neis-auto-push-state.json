@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "intervalMinutes": 5,
+  "lastAutoPushTime": "2026-05-25T02:34:01.641Z",
+  "lastAutoPushStatus": "success",
+  "sandboxResetDetected": false
+}
