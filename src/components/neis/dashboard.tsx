@@ -223,26 +223,47 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
       doc.setFontSize(10);
       doc.text(`Tanggal: ${format(date, 'dd MMMM yyyy', { locale: idLocale })}`, 14, 22);
 
+      const totalHadir = kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_hadir) || 0), 0);
+      const totalIzinSakit = kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_izin_sakit) || 0), 0);
+      const totalAlfa = kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_alfa) || 0), 0);
+      const totalSiswa = kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_siswa_total) || 0), 0);
+
       autoTable(doc, {
         startY: 28,
-        head: [['Kelas', 'Hadir', 'Izin/Sakit', 'Alfa', 'Total']],
-        body: kehadiranSiswa.map((k: any) => [
-          k.nama_kelas,
-          k.jumlah_hadir || 0,
-          k.jumlah_izin_sakit || 0,
-          k.jumlah_alfa || 0,
-          k.jumlah_siswa_total || 0,
-        ]),
+        head: [['Kelas', 'Hadir', 'Izin/Sakit', 'Alfa', 'Jumlah']],
+        body: [
+          ...kehadiranSiswa.map((k: any) => [
+            k.nama_kelas,
+            k.jumlah_hadir || 0,
+            k.jumlah_izin_sakit || 0,
+            k.jumlah_alfa || 0,
+            k.jumlah_siswa_total || 0,
+          ]),
+          ['Jumlah Total', totalHadir, totalIzinSakit, totalAlfa, totalSiswa],
+        ],
+        didParseCell: (data: any) => {
+          if (data.row.index === kehadiranSiswa.length) {
+            data.cell.styles.fontStyle = 'bold';
+          }
+        },
       });
       doc.save(`kehadiran-siswa-${format(date, 'yyyy-MM-dd')}.pdf`);
     };
 
     const handleExportExcel = async () => {
       const XLSX = await import('xlsx');
-      const wsData = [['Kelas', 'Hadir', 'Izin/Sakit', 'Alfa', 'Total']];
+      const wsData = [['Kelas', 'Hadir', 'Izin/Sakit', 'Alfa', 'Jumlah']];
       kehadiranSiswa.forEach((k: any) => {
         wsData.push([k.nama_kelas, k.jumlah_hadir || 0, k.jumlah_izin_sakit || 0, k.jumlah_alfa || 0, k.jumlah_siswa_total || 0]);
       });
+      // Add Jumlah Total row
+      wsData.push([
+        'Jumlah Total',
+        kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_hadir) || 0), 0),
+        kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_izin_sakit) || 0), 0),
+        kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_alfa) || 0), 0),
+        kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_siswa_total) || 0), 0),
+      ]);
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(wsData);
       XLSX.utils.book_append_sheet(wb, ws, 'Kehadiran Siswa');
@@ -291,7 +312,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
                     <TableHead className="text-center">Hadir</TableHead>
                     <TableHead className="text-center">Izin/Sakit</TableHead>
                     <TableHead className="text-center">Alfa</TableHead>
-                    <TableHead className="text-center">Total</TableHead>
+                    <TableHead className="text-center">Jumlah</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
