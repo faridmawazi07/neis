@@ -192,13 +192,20 @@ export async function PUT(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: 'ID kehadiran wajib diisi' }, { status: 400 });
 
+    // Get existing record for ownership check and old photo
+    const existingRecord = await turso.execute({
+      sql: 'SELECT guru_id, foto_mengajar FROM kehadiran_mengajar WHERE id = ?',
+      args: [id],
+    });
+    if (existingRecord.rows.length === 0) {
+      return NextResponse.json({ error: 'Data kehadiran tidak ditemukan' }, { status: 404 });
+    }
+
+    const oldFotoMengajar = existingRecord.rows[0].foto_mengajar as string | null;
+
     // Check ownership for guru
     if (payload.role === 'guru') {
-      const existing = await turso.execute({
-        sql: 'SELECT guru_id FROM kehadiran_mengajar WHERE id = ?',
-        args: [id],
-      });
-      if (existing.rows.length === 0 || existing.rows[0].guru_id !== payload.userId) {
+      if (existingRecord.rows[0].guru_id !== payload.userId) {
         return NextResponse.json({ error: 'Anda tidak memiliki akses untuk mengedit kehadiran ini' }, { status: 403 });
       }
 
@@ -217,10 +224,15 @@ export async function PUT(req: NextRequest) {
 
     // Upload foto_mengajar to Cloudinary (dynamic import)
     let foto_mengajar: string | null = null;
+    let shouldDeleteOldFoto = false;
     if (foto_mengajar_raw) {
       try {
         const { uploadImage } = await import('@/lib/cloudinary');
         foto_mengajar = await uploadImage(foto_mengajar_raw, 'neis/kehadiran');
+        // Mark old photo for deletion if new upload succeeded and old was on Cloudinary
+        if (oldFotoMengajar && oldFotoMengajar.includes('cloudinary.com') && foto_mengajar !== oldFotoMengajar) {
+          shouldDeleteOldFoto = true;
+        }
       } catch {
         foto_mengajar = foto_mengajar_raw;
       }
@@ -247,6 +259,16 @@ export async function PUT(req: NextRequest) {
     updateArgs.push(id);
 
     await turso.execute({ sql: updateSql, args: updateArgs });
+
+    // Delete old photo from Cloudinary AFTER DB update succeeds
+    if (shouldDeleteOldFoto && oldFotoMengajar) {
+      try {
+        const { deleteFromCloudinary } = await import('@/lib/cloudinary');
+        await deleteFromCloudinary(oldFotoMengajar);
+      } catch (e) {
+        console.error('Failed to delete old kehadiran photo from Cloudinary:', e);
+      }
+    }
 
     return NextResponse.json({ message: 'Kehadiran berhasil diubah' });
   } catch (error) {
@@ -278,7 +300,7 @@ export async function DELETE(req: NextRequest) {
       // Validate all IDs exist
       const placeholders = ids.map(() => '?').join(',');
       const existing = await turso.execute({
-        sql: `SELECT id FROM kehadiran_mengajar WHERE id IN (${placeholders})`,
+        sql: `SELECT id, foto_mengajar FROM kehadiran_mengajar WHERE id IN (${placeholders})`,
         args: ids,
       });
       if (existing.rows.length !== ids.length) {
@@ -290,6 +312,19 @@ export async function DELETE(req: NextRequest) {
         args: ids,
       });
 
+      // Delete Cloudinary photos for bulk deleted records
+      const cloudinaryPhotos = existing.rows
+        .map(r => r.foto_mengajar as string)
+        .filter((url): url is string => !!(url && url.includes('cloudinary.com')));
+      if (cloudinaryPhotos.length > 0) {
+        try {
+          const { deleteFromCloudinary } = await import('@/lib/cloudinary');
+          await Promise.allSettled(cloudinaryPhotos.map(url => deleteFromCloudinary(url)));
+        } catch (e) {
+          console.error('Failed to delete some kehadiran photos from Cloudinary:', e);
+        }
+      }
+
       return NextResponse.json({ message: `${ids.length} data kehadiran berhasil dihapus` });
     }
 
@@ -298,20 +333,37 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'ID kehadiran wajib diisi' }, { status: 400 });
     }
 
+    // Get existing record for photo cleanup
+    const existingRecord = await turso.execute({
+      sql: 'SELECT guru_id, foto_mengajar FROM kehadiran_mengajar WHERE id = ?',
+      args: [id],
+    });
+    if (existingRecord.rows.length === 0) {
+      return NextResponse.json({ error: 'Data kehadiran tidak ditemukan' }, { status: 404 });
+    }
+
     if (payload.role === 'guru') {
-      const existing = await turso.execute({
-        sql: 'SELECT guru_id FROM kehadiran_mengajar WHERE id = ?',
-        args: [id],
-      });
-      if (existing.rows.length === 0 || existing.rows[0].guru_id !== payload.userId) {
+      if (existingRecord.rows[0].guru_id !== payload.userId) {
         return NextResponse.json({ error: 'Anda tidak memiliki akses' }, { status: 403 });
       }
     }
+
+    const fotoToDelete = existingRecord.rows[0].foto_mengajar as string | null;
 
     await turso.execute({
       sql: 'DELETE FROM kehadiran_mengajar WHERE id = ?',
       args: [id],
     });
+
+    // Delete photo from Cloudinary AFTER DB delete succeeds
+    if (fotoToDelete && fotoToDelete.includes('cloudinary.com')) {
+      try {
+        const { deleteFromCloudinary } = await import('@/lib/cloudinary');
+        await deleteFromCloudinary(fotoToDelete);
+      } catch (e) {
+        console.error('Failed to delete kehadiran photo from Cloudinary:', e);
+      }
+    }
 
     return NextResponse.json({ message: 'Kehadiran berhasil dihapus' });
   } catch (error) {

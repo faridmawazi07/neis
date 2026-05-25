@@ -32,12 +32,14 @@ export async function POST(req: NextRequest) {
 
     // Check if user exists
     const existing = await turso.execute({
-      sql: 'SELECT id, nip FROM users WHERE id = ?',
+      sql: 'SELECT id, nip, foto_profile FROM users WHERE id = ?',
       args: [id],
     });
     if (existing.rows.length === 0) {
       return NextResponse.json({ error: 'Pengguna tidak ditemukan' }, { status: 404 });
     }
+
+    const oldFotoProfile = existing.rows[0].foto_profile as string | null;
 
     const updates: string[] = [];
     const args: (string | null)[] = [];
@@ -93,7 +95,8 @@ export async function POST(req: NextRequest) {
       args.push(tanggal_lahir || null);
     }
 
-    // Handle photo upload - upload to Cloudinary, fallback to base64
+    // Handle photo upload - upload to Cloudinary, delete old photo
+    let shouldDeleteOldPhoto = false;
     if (foto_profile && typeof foto_profile !== 'string') {
       const bytes = await foto_profile.arrayBuffer();
       const buffer = Buffer.from(bytes);
@@ -106,6 +109,10 @@ export async function POST(req: NextRequest) {
       try {
         const { uploadImage } = await import('@/lib/cloudinary');
         uploadedUrl = await uploadImage(dataUrl, 'neis/profile', `profile_${id}`);
+        // Mark old photo for deletion if new upload succeeded and old was on Cloudinary
+        if (oldFotoProfile && oldFotoProfile.includes('cloudinary.com') && uploadedUrl !== oldFotoProfile) {
+          shouldDeleteOldPhoto = true;
+        }
       } catch {}
 
       updates.push('foto_profile = ?');
@@ -116,12 +123,16 @@ export async function POST(req: NextRequest) {
       try {
         const { uploadImage } = await import('@/lib/cloudinary');
         uploadedUrl = await uploadImage(foto_profile, 'neis/profile', `profile_${id}`);
+        if (oldFotoProfile && oldFotoProfile.includes('cloudinary.com') && uploadedUrl !== oldFotoProfile) {
+          shouldDeleteOldPhoto = true;
+        }
       } catch {}
 
       updates.push('foto_profile = ?');
       args.push(uploadedUrl);
     } else if (remove_photo === 'true') {
-      // Admin explicitly removes photo
+      // Admin explicitly removes photo - delete from Cloudinary
+      shouldDeleteOldPhoto = !!(oldFotoProfile && oldFotoProfile.includes('cloudinary.com'));
       updates.push('foto_profile = ?');
       args.push(null);
     }
@@ -147,6 +158,16 @@ export async function POST(req: NextRequest) {
       sql: `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
       args,
     });
+
+    // Delete old photo from Cloudinary AFTER DB update succeeds
+    if (shouldDeleteOldPhoto && oldFotoProfile) {
+      try {
+        const { deleteFromCloudinary } = await import('@/lib/cloudinary');
+        await deleteFromCloudinary(oldFotoProfile);
+      } catch (e) {
+        console.error('Failed to delete old profile photo from Cloudinary:', e);
+      }
+    }
 
     // Fetch updated user
     const updated = await turso.execute({

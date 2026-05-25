@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Eye, EyeOff, Camera, Image as ImageIcon, ArrowLeft, SwitchCamera, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { compressFile, compressImage } from '@/lib/image-compress';
 import Image from 'next/image';
 import { ImageModal } from './image-modal';
 
@@ -63,14 +64,15 @@ export function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setFoto(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressFile(file);
+      setFoto(compressed);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Gagal memproses foto', variant: 'destructive' });
+    }
   };
 
   // Check if device is mobile
@@ -125,11 +127,23 @@ export function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0);
-    canvas.toBlob((blob) => {
+    // Compress captured photo to JPEG
+    canvas.toBlob(async (blob) => {
       if (!blob) return;
-      const reader = new FileReader();
-      reader.onloadend = () => setFoto(reader.result as string);
-      reader.readAsDataURL(blob);
+      try {
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        const compressed = await compressImage(dataUrl);
+        setFoto(compressed);
+      } catch {
+        // Fallback: use uncompressed
+        const reader = new FileReader();
+        reader.onloadend = () => setFoto(reader.result as string);
+        reader.readAsDataURL(blob);
+      }
       stopCamera();
     }, 'image/jpeg', 0.85);
   }, [stopCamera]);

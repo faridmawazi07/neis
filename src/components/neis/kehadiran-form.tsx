@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Camera, Image as ImageIcon, Lock, SwitchCamera, X } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
+import { compressFile, compressImage } from '@/lib/image-compress';
 import { useToast } from '@/hooks/use-toast';
 import { StudentAbsenceModal } from './student-absence-modal';
 import { ImageModal } from './image-modal';
@@ -182,12 +183,15 @@ export function KehadiranForm({ open, onClose, onSuccess, editData }: KehadiranF
     setSiswaList([]);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => setFotoMengajar(reader.result as string);
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressFile(file);
+      setFotoMengajar(compressed);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Gagal memproses foto', variant: 'destructive' });
+    }
   };
 
   // Check if device is mobile
@@ -242,11 +246,23 @@ export function KehadiranForm({ open, onClose, onSuccess, editData }: KehadiranF
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0);
-    canvas.toBlob((blob) => {
+    // Compress captured photo to JPEG
+    canvas.toBlob(async (blob) => {
       if (!blob) return;
-      const reader = new FileReader();
-      reader.onloadend = () => setFotoMengajar(reader.result as string);
-      reader.readAsDataURL(blob);
+      try {
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        const compressed = await compressImage(dataUrl);
+        setFotoMengajar(compressed);
+      } catch {
+        // Fallback: use uncompressed
+        const reader = new FileReader();
+        reader.onloadend = () => setFotoMengajar(reader.result as string);
+        reader.readAsDataURL(blob);
+      }
       stopCamera();
     }, 'image/jpeg', 0.85);
   }, [stopCamera]);

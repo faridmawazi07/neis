@@ -120,6 +120,7 @@ export async function deleteFromCloudinary(imageUrl: string): Promise<void> {
 
 /**
  * Upload image to Cloudinary with fallback to base64 data URL
+ * Validates max size before upload
  */
 export async function uploadImage(
   dataUrl: string,
@@ -133,6 +134,14 @@ export async function uploadImage(
 
   // Not a data URL
   if (!dataUrl.startsWith('data:')) return dataUrl;
+
+  // Validate size - base64 is ~33% larger than actual file
+  const base64Length = dataUrl.length - dataUrl.indexOf(',') - 1;
+  const estimatedSizeBytes = Math.ceil(base64Length * 3 / 4);
+  const maxBytes = 5 * 1024 * 1024; // 5MB
+  if (estimatedSizeBytes > maxBytes) {
+    throw new Error(`Ukuran foto terlalu besar (${(estimatedSizeBytes / 1024 / 1024).toFixed(1)}MB). Maksimal 5MB.`);
+  }
 
   // Try Cloudinary upload
   if (isCloudinaryConfigured()) {
