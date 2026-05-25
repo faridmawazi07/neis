@@ -169,15 +169,27 @@ async function pushToGitHub(commitMessage: string = 'chore: auto backup by NEIS'
   try {
     await execAsync('git add .', { cwd: PROJECT_DIR });
 
-    let hadChanges = false;
+    let newCommitCreated = false;
+    let newCommitCount = 0;
     try {
       const { stdout } = await execAsync('git diff --cached --stat', { cwd: PROJECT_DIR });
       if (stdout.trim()) {
-        hadChanges = true;
+        newCommitCreated = true;
         await execAsync(`git commit -m "${commitMessage}"`, { cwd: PROJECT_DIR });
       }
     } catch {
       // commit might fail if nothing to commit, that's fine
+    }
+
+    // Count unpushed commits (including the one we just created)
+    try {
+      await execAsync('git fetch origin main', { cwd: PROJECT_DIR, timeout: 30000 });
+      const { stdout } = await execAsync('git log origin/main..HEAD --oneline', { cwd: PROJECT_DIR });
+      const unpushedLines = stdout.trim().split('\n').filter(Boolean);
+      newCommitCount = unpushedLines.length;
+    } catch {
+      // If fetch fails, assume we have unpushed commits if we just committed
+      if (newCommitCreated) newCommitCount = 1;
     }
 
     // Set remote URL with PAT for authentication
@@ -198,7 +210,18 @@ async function pushToGitHub(commitMessage: string = 'chore: auto backup by NEIS'
       await execAsync(`git remote set-url origin https://github.com/${GITHUB_REPO}`, { cwd: PROJECT_DIR });
     }
 
-    return { success: true, message: hadChanges ? 'Kode berhasil disimpan ke GitHub!' : 'Tidak ada perubahan baru. Status sudah sinkron.', hadChanges };
+    // Generate accurate message based on what actually happened
+    let message: string;
+    const hadChanges = newCommitCount > 0 || newCommitCreated;
+    if (newCommitCount > 0) {
+      message = `✅ ${newCommitCount} commit berhasil di-push ke GitHub!`;
+    } else if (newCommitCreated) {
+      message = '✅ Kode berhasil disimpan ke GitHub!';
+    } else {
+      message = 'Tidak ada perubahan baru. Status sudah sinkron dengan GitHub.';
+    }
+
+    return { success: true, message, hadChanges };
   } catch (error: any) {
     // Ensure we always reset the URL even on error
     try {
@@ -255,7 +278,22 @@ export async function POST(req: NextRequest) {
       }
 
       const timestamp = new Date().toISOString();
-      const result = await pushToGitHub(`chore: auto backup ${timestamp}`);
+      // Count changed files for more descriptive commit message
+      let changedFiles = 0;
+      try {
+        await execAsync('git add .', { cwd: PROJECT_DIR });
+        const { stdout } = await execAsync('git diff --cached --stat', { cwd: PROJECT_DIR });
+        if (stdout.trim()) {
+          const lines = stdout.trim().split('\n');
+          const lastLine = lines[lines.length - 1];
+          const match = lastLine.match(/(\d+) files? changed/);
+          if (match) changedFiles = parseInt(match[1]);
+        }
+      } catch {}
+      const commitMsg = changedFiles > 0
+        ? `chore: auto backup - ${changedFiles} file diubah (${timestamp})`
+        : `chore: auto backup ${timestamp}`;
+      const result = await pushToGitHub(commitMsg);
       lastAutoPushTime = timestamp;
 
       if (result.sandboxResetDetected) {
@@ -283,7 +321,21 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'push') {
-      const result = await pushToGitHub('chore: manual backup by Admin');
+      // Count changed files for more descriptive commit message
+      let changedFiles = 0;
+      try {
+        const { stdout } = await execAsync('git diff --stat HEAD', { cwd: PROJECT_DIR });
+        if (stdout.trim()) {
+          const lines = stdout.trim().split('\n');
+          const lastLine = lines[lines.length - 1];
+          const match = lastLine.match(/(\d+) files? changed/);
+          if (match) changedFiles = parseInt(match[1]);
+        }
+      } catch {}
+      const commitMsg = changedFiles > 0
+        ? `chore: manual backup by Admin - ${changedFiles} file diubah`
+        : 'chore: manual backup by Admin';
+      const result = await pushToGitHub(commitMsg);
       if (result.sandboxResetDetected) {
         return NextResponse.json({
           error: result.message,
