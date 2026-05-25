@@ -1,7 +1,11 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = 'neis-smkn-maniis-secret-key-2024';
+const JWT_SECRET = process.env.NEIS_JWT_SECRET || 'neis-smkn-maniis-secret-key-2024';
+
+if (!process.env.NEIS_JWT_SECRET) {
+  console.warn('[NEIS] ⚠️ NEIS_JWT_SECRET not set, using default. Set env var for production!');
+}
 
 export interface JWTPayload {
   userId: string;

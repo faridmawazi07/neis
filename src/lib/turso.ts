@@ -4,11 +4,21 @@ const globalForTurso = globalThis as unknown as {
   turso: Client | undefined;
 };
 
+const TURSO_URL = process.env.TURSO_URL || 'libsql://smknmaniis-1-ried-82.aws-ap-northeast-1.turso.io';
+const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk1MDM0NjMsImlkIjoiMDE5ZTUyYWItNjcwMS03Zjk4LWJkNDktOTIyYmI0Zjk5ZGI4IiwicmlkIjoiMTNiODk3MzQtZDM5YS00MDZhLTgwNzItYTBiNmJiZmU2MTUyIn0.eKpVbxXQBc3l7cYnDetQVp_9hiKanZRPTj98HurIDT_ll6HFM0f8B2BWHhfIBIXObHxrp04G3NFIruUtGJWbBQ';
+
+if (!process.env.TURSO_URL) {
+  console.warn('[NEIS] ⚠️ TURSO_URL not set, using default. Set env var for production!');
+}
+if (!process.env.TURSO_AUTH_TOKEN) {
+  console.warn('[NEIS] ⚠️ TURSO_AUTH_TOKEN not set, using default. Set env var for production!');
+}
+
 export const turso: Client =
   globalForTurso.turso ??
   createClient({
-    url: 'libsql://smknmaniis-1-ried-82.aws-ap-northeast-1.turso.io',
-    authToken: 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3Nzk1MDM0NjMsImlkIjoiMDE5ZTUyYWItNjcwMS03Zjk4LWJkNDktOTIyYmI0Zjk5ZGI4IiwicmlkIjoiMTNiODk3MzQtZDM5YS00MDZhLTgwNzItYTBiNmJiZmU2MTUyIn0.eKpVbxXQBc3l7cYnDetQVp_9hiKanZRPTj98HurIDT_ll6HFM0f8B2BWHhfIBIXObHxrp04G3NFIruUtGJWbBQ',
+    url: TURSO_URL,
+    authToken: TURSO_AUTH_TOKEN,
   });
 
 if (process.env.NODE_ENV !== 'production') globalForTurso.turso = turso;

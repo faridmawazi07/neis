@@ -49,17 +49,19 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const isProduction = process.env.NODE_ENV === 'production';
+
     if (rememberMe) {
       response.cookies.set('neis-token', token, {
         httpOnly: true,
-        secure: false,
+        secure: isProduction,
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60, // 7 days
         path: '/',
       });
       response.cookies.set('neis-remember', 'true', {
         httpOnly: false,
-        secure: false,
+        secure: isProduction,
         sameSite: 'lax',
         maxAge: 30 * 24 * 60 * 60, // 30 days
         path: '/',
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
     } else {
       response.cookies.set('neis-token', token, {
         httpOnly: true,
-        secure: false,
+        secure: isProduction,
         sameSite: 'lax',
         maxAge: 24 * 60 * 60, // 1 day
         path: '/',
