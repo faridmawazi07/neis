@@ -7,13 +7,32 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Progress } from '@/components/ui/progress';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  Upload, Download, Loader2, Settings, Wifi, WifiOff, Clock, GitBranch, AlertCircle, CheckCircle2,
+  Upload, Download, Loader2, Settings, Wifi, WifiOff, Clock, GitBranch,
+  AlertCircle, CheckCircle2, Cloud, HardDrive, ImageIcon, Zap,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+
+interface CloudinaryInfo {
+  configured: boolean;
+  error?: string;
+  storage?: {
+    usedMB: number;
+    limitMB: number;
+    percentage: number;
+  };
+  bandwidth?: {
+    usedMB: number;
+    limitMB: number;
+    percentage: number;
+  };
+  resources?: number;
+  plan?: string;
+}
 
 interface GitStatus {
   connected: boolean;
@@ -25,6 +44,7 @@ interface GitStatus {
   hasUncommittedChanges: boolean;
   ahead: number;
   behind: number;
+  cloudinary: CloudinaryInfo;
 }
 
 function formatTime(iso: string | null): string {
@@ -44,11 +64,12 @@ export function GitControlPage() {
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [autoPush, setAutoPush] = useState(true);
-  const [branch, setBranch] = useState('main');
+  const [branch, setBranch] = useState('dev');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<GitStatus>({
     connected: false, autoPush: true, lastPush: null, lastPull: null,
-    branch: 'main', currentBranch: 'main', hasUncommittedChanges: false, ahead: 0, behind: 0,
+    branch: 'dev', currentBranch: 'main', hasUncommittedChanges: false, ahead: 0, behind: 0,
+    cloudinary: { configured: false },
   });
 
   const fetchStatus = useCallback(async () => {
@@ -112,16 +133,18 @@ export function GitControlPage() {
     finally { setSaving(false); }
   };
 
+  const cld = status.cloudinary;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold">Git Control</h1>
+        <h1 className="text-xl font-bold">Git Control & Penyimpanan</h1>
         <Button variant="outline" size="sm" onClick={() => { setAutoPush(status.autoPush); setBranch(status.branch); setSettingsOpen(true); }}>
           <Settings className="h-4 w-4 mr-1" /> Pengaturan
         </Button>
       </div>
 
-      {/* Connection & Status Info */}
+      {/* GitHub Connection Status */}
       <Card className="mb-4">
         <CardContent className="p-4 space-y-3">
           {loading ? (
@@ -192,6 +215,82 @@ export function GitControlPage() {
         </CardContent>
       </Card>
 
+      {/* Cloudinary Storage Status */}
+      <Card className="mb-4">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Cloud className="h-5 w-5 text-sky-500" /> Cloudinary Penyimpanan Foto
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {loading ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin text-sky-500" /></div>
+          ) : !cld.configured ? (
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium text-amber-700 dark:text-amber-400">Cloudinary Belum Dikonfigurasi</p>
+                  <p className="text-amber-600 dark:text-amber-500 mt-1">Atur CLOUDINARY_CLOUD_NAME, API_KEY, dan API_SECRET di server.</p>
+                </div>
+              </div>
+            </div>
+          ) : cld.error ? (
+            <div className="flex items-center gap-2 text-sm text-destructive"><AlertCircle className="h-4 w-4" /> {cld.error}</div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Cloud className="h-4 w-4 text-sky-500" />
+                  <span className="font-medium text-sm">Terhubung</span>
+                </div>
+                <Badge className="bg-sky-500 capitalize">{cld.plan || 'Free'} Plan</Badge>
+              </div>
+
+              <Separator />
+
+              {/* Storage */}
+              {cld.storage && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <HardDrive className="h-4 w-4" /> Penyimpanan
+                    </div>
+                    <span className="font-medium">{cld.storage.usedMB} MB / {cld.storage.limitMB} MB</span>
+                  </div>
+                  <Progress value={cld.storage.percentage} className="h-2" />
+                  <p className="text-xs text-muted-foreground text-right">{cld.storage.percentage}% terpakai</p>
+                </div>
+              )}
+
+              {/* Bandwidth */}
+              {cld.bandwidth && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Zap className="h-4 w-4" /> Bandwidth
+                    </div>
+                    <span className="font-medium">{cld.bandwidth.usedMB} MB / {cld.bandwidth.limitMB} MB</span>
+                  </div>
+                  <Progress value={cld.bandwidth.percentage} className="h-2" />
+                  <p className="text-xs text-muted-foreground text-right">{cld.bandwidth.percentage}% terpakai</p>
+                </div>
+              )}
+
+              {/* Resources */}
+              <div className="grid grid-cols-2 gap-3 text-sm pt-1">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <ImageIcon className="h-4 w-4" /> Foto: <strong className="text-foreground">{cld.resources ?? 0}</strong>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <HardDrive className="h-4 w-4" /> Turunan: <strong className="text-foreground">{cld.derivedResources ?? 0}</strong>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Push & Pull Buttons */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
         <Card>
@@ -231,6 +330,20 @@ export function GitControlPage() {
         </Card>
       </div>
 
+      {/* Info Box */}
+      <div className="mt-4 max-w-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 text-sm">
+        <div className="flex items-start gap-2">
+          <GitBranch className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+          <div className="text-blue-700 dark:text-blue-400">
+            <p className="font-medium">Alur Kerja GitHub</p>
+            <p className="mt-1 text-blue-600 dark:text-blue-500">
+              Sandbox otomatis push ke <strong>dev</strong> → Merge di GitHub ke <strong>main</strong> → Deploy ke Vercel (production).
+              Auto-push berjalan setiap 5 menit untuk mencegah kehilangan data saat sandbox reset.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Settings Dialog */}
       <Dialog open={settingsOpen} onOpenChange={(open) => { if (!saving) setSettingsOpen(open); }}>
         <DialogContent className="max-w-md">
@@ -241,19 +354,21 @@ export function GitControlPage() {
             <div className="space-y-2">
               <Label className="text-sm font-medium">Branch Tujuan</Label>
               <div className="flex gap-2">
-                {['main', 'dev'].map((b) => (
+                {['dev', 'main'].map((b) => (
                   <Button key={b} variant={branch === b ? 'default' : 'outline'} size="sm" onClick={() => setBranch(b)} className={branch === b ? 'bg-ocean hover:bg-ocean-dark text-white' : ''}>
                     {b}
                   </Button>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground"><strong>main</strong> = Production · <strong>dev</strong> = Preview</p>
+              <p className="text-xs text-muted-foreground">
+                <strong>dev</strong> = Preview (aman untuk development) · <strong>main</strong> = Production (deploy ke Vercel)
+              </p>
             </div>
 
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
                 <Label className="text-sm font-medium">Auto Push ke GitHub</Label>
-                <p className="text-xs text-muted-foreground">Otomatis push setiap ada perubahan kode</p>
+                <p className="text-xs text-muted-foreground">Otomatis push setiap 5 menit saat ada perubahan</p>
               </div>
               <Switch checked={autoPush} onCheckedChange={setAutoPush} />
             </div>

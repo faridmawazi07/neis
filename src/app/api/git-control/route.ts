@@ -24,7 +24,7 @@ function getConfig(): GitHubConfig {
       return JSON.parse(raw);
     }
   } catch {}
-  return { autoPush: true, lastPush: null, lastPull: null, branch: 'main' };
+  return { autoPush: true, lastPush: null, lastPull: null, branch: 'dev' };
 }
 
 function saveConfig(config: GitHubConfig) {
@@ -32,11 +32,8 @@ function saveConfig(config: GitHubConfig) {
 }
 
 function getGitHubPAT(): string {
-  // 1. Try environment variable
   if (process.env.NEIS_GITHUB_PAT) return process.env.NEIS_GITHUB_PAT;
   if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
-
-  // 2. Try .neis.env file (same format as instrumentation.ts)
   try {
     if (existsSync(NEIS_ENV_FILE)) {
       const content = readFileSync(NEIS_ENV_FILE, 'utf-8');
@@ -50,7 +47,6 @@ function getGitHubPAT(): string {
       if (p1 && p2 && p3) return p1[1].trim() + p2[1].trim() + p3[1].trim();
     }
   } catch {}
-
   return '';
 }
 
@@ -58,12 +54,67 @@ function isAdmin(req: NextRequest): { authorized: boolean; isAutoPush: boolean }
   const token = req.cookies.get('neis-token')?.value || req.headers.get('Authorization')?.replace('Bearer ', '');
   const isAutoPush = req.headers.get('X-Auto-Push') === 'true' && token === 'neis-internal-auto-push';
   if (isAutoPush) return { authorized: true, isAutoPush: true };
-
   if (!token) return { authorized: false, isAutoPush: false };
   const payload = verifyToken(token);
   if (!payload) return { authorized: false, isAutoPush: false };
   if (payload.role !== 'admin') return { authorized: false, isAutoPush: false };
   return { authorized: true, isAutoPush: false };
+}
+
+async function getCloudinaryUsage() {
+  try {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || '';
+    const apiKey = process.env.CLOUDINARY_API_KEY || '';
+    const apiSecret = process.env.CLOUDINARY_API_SECRET || '';
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      return { configured: false };
+    }
+
+    // Use Admin API to get usage stats
+    const timestamp = Math.floor(Date.now() / 1000);
+    const { createHmac } = await import('crypto');
+    const sigString = `timestamp=${timestamp}${apiSecret}`;
+    const signature = createHmac('sha1', apiSecret).update(sigString).digest('hex');
+
+    const formData = new FormData();
+    formData.append('api_key', apiKey);
+    formData.append('timestamp', String(timestamp));
+    formData.append('signature', signature);
+
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/usage`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) return { configured: true, error: 'Gagal mengambil data' };
+
+    const data = await res.json();
+    return {
+      configured: true,
+      storage: {
+        usedBytes: data.storage?.usage || 0,
+        limitBytes: data.storage?.limit || 0,
+        usedMB: Math.round((data.storage?.usage || 0) / 1024 / 1024 * 100) / 100,
+        limitMB: Math.round((data.storage?.limit || 0) / 1024 / 1024),
+        percentage: data.storage?.limit ? Math.round((data.storage?.usage / data.storage?.limit) * 1000) / 10 : 0,
+      },
+      bandwidth: {
+        usedBytes: data.bandwidth?.usage || 0,
+        limitBytes: data.bandwidth?.limit || 0,
+        usedMB: Math.round((data.bandwidth?.usage || 0) / 1024 / 1024 * 100) / 100,
+        limitMB: Math.round((data.bandwidth?.limit || 0) / 1024 / 1024),
+        percentage: data.bandwidth?.limit ? Math.round((data.bandwidth?.usage / data.bandwidth?.limit) * 1000) / 10 : 0,
+      },
+      requests: data.requests || 0,
+      resources: data.resources || 0,
+      derivedResources: data.derived_resources || 0,
+      plan: data.plan || 'free',
+    };
+  } catch (error) {
+    console.error('Cloudinary usage error:', error);
+    return { configured: true, error: 'Gagal mengambil data Cloudinary' };
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -105,6 +156,9 @@ export async function GET(req: NextRequest) {
       behind = parseInt(parts[1] || '0');
     } catch {}
 
+    // Get Cloudinary usage
+    const cloudinary = await getCloudinaryUsage();
+
     return NextResponse.json({
       connected: !!gitToken,
       autoPush: config.autoPush,
@@ -115,6 +169,7 @@ export async function GET(req: NextRequest) {
       hasUncommittedChanges,
       ahead,
       behind,
+      cloudinary,
     });
   } catch (error) {
     console.error('Git control GET error:', error);
