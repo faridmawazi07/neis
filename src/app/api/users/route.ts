@@ -124,43 +124,50 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden - Hanya admin yang dapat menghapus pengguna' }, { status: 403 });
     }
 
-    const { id } = await req.json();
-    if (!id) {
+    const body = await req.json();
+    const { id, ids } = body;
+
+    // Support bulk delete (array of IDs) or single ID
+    const deleteIds: string[] = ids || (id ? [id] : []);
+    if (deleteIds.length === 0) {
       return NextResponse.json({ error: 'ID pengguna wajib diisi' }, { status: 400 });
     }
 
     // Prevent deleting self
-    if (id === payload.userId) {
+    if (deleteIds.includes(payload.userId)) {
       return NextResponse.json({ error: 'Tidak dapat menghapus akun sendiri' }, { status: 400 });
     }
 
-    // Check if user exists
+    // Check if users exist
     const existing = await turso.execute({
-      sql: 'SELECT id, role FROM users WHERE id = ?',
-      args: [id],
+      sql: `SELECT id, role FROM users WHERE id IN (${deleteIds.map(() => '?').join(', ')})`,
+      args: deleteIds,
     });
-    if (existing.rows.length === 0) {
-      return NextResponse.json({ error: 'Pengguna tidak ditemukan' }, { status: 404 });
+    if (existing.rows.length !== deleteIds.length) {
+      return NextResponse.json({ error: 'Salah satu pengguna tidak ditemukan' }, { status: 404 });
     }
 
-    const userRole = existing.rows[0].role as string;
-
-    // If deleting a guru, cascade delete their jadwal
+    // For each guru being deleted, cascade delete their jadwal
     // But NOT their kehadiran_mengajar
-    if (userRole === 'guru') {
+    const guruIds = existing.rows
+      .filter((r: any) => r.role === 'guru')
+      .map((r: any) => r.id as string);
+
+    for (const guruId of guruIds) {
       await turso.execute({
         sql: 'DELETE FROM jadwal WHERE guru_id = ?',
-        args: [id],
+        args: [guruId],
       });
     }
 
-    // Delete the user
+    // Delete the users
     await turso.execute({
-      sql: 'DELETE FROM users WHERE id = ?',
-      args: [id],
+      sql: `DELETE FROM users WHERE id IN (${deleteIds.map(() => '?').join(', ')})`,
+      args: deleteIds,
     });
 
-    return NextResponse.json({ message: 'Pengguna berhasil dihapus' });
+    const count = deleteIds.length;
+    return NextResponse.json({ message: count === 1 ? 'Pengguna berhasil dihapus' : `${count} pengguna berhasil dihapus` });
   } catch (error) {
     console.error('DELETE /api/users error:', error);
     return NextResponse.json({ error: 'Gagal menghapus pengguna' }, { status: 500 });

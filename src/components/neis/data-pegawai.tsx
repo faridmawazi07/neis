@@ -15,7 +15,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, UserCheck, Trash2, Pencil, Upload, X, Eye, Camera, Image as ImageIcon, SwitchCamera } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Search, UserCheck, Trash2, Trash2Icon, Pencil, Upload, X, Eye, Camera, Image as ImageIcon, SwitchCamera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ImageModal } from './image-modal';
 
@@ -40,6 +41,10 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
 
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Bulk selection (admin only)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   // Image modal
   const [imageSrc, setImageSrc] = useState('');
@@ -80,6 +85,11 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
   }, [search]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Clear selection when data changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [dataList]);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -123,6 +133,43 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
       setDeleteId(null); fetchData();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
   };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const res = await fetch('/api/users', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }), credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
+      toast({ title: 'Berhasil', description: `${selectedIds.size} pengguna berhasil dihapus` });
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+      fetchData();
+    } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
+  };
+
+  // Selection helpers
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === dataList.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(dataList.map((d: any) => d.id)));
+    }
+  };
+
+  const allSelected = dataList.length > 0 && selectedIds.size === dataList.length;
+  const someSelected = selectedIds.size > 0 && !allSelected;
 
   // Edit handlers
   const openEditModal = (d: any) => {
@@ -310,7 +357,14 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-4">Data Pegawai</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-xl font-bold">Data Pegawai</h1>
+        {role === 'admin' && selectedIds.size > 0 && (
+          <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
+            <Trash2Icon className="h-4 w-4 mr-1" /> Hapus ({selectedIds.size})
+          </Button>
+        )}
+      </div>
 
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -336,11 +390,30 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
             dataList.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">Belum ada data</p> :
             <div className="overflow-x-auto"><Table>
               <TableHeader><TableRow>
+                {role === 'admin' && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el) el.dataset.state = someSelected ? 'indeterminate' : allSelected ? 'checked' : 'unchecked';
+                      }}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
+                )}
                 <TableHead>Foto</TableHead><TableHead>NIP</TableHead><TableHead>Nama</TableHead><TableHead>Role</TableHead><TableHead>JK</TableHead><TableHead>Tgl Lahir</TableHead>
                 {role === 'admin' && <TableHead>Aksi</TableHead>}
               </TableRow></TableHeader>
               <TableBody>{dataList.map((d: any) => (
-                <TableRow key={d.id}>
+                <TableRow key={d.id} className={selectedIds.has(d.id) ? 'bg-muted/50' : ''}>
+                  {role === 'admin' && (
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.has(d.id)}
+                        onCheckedChange={() => toggleSelect(d.id)}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>{renderFoto(d)}</TableCell>
                   <TableCell className="text-xs">{d.nip || '-'}</TableCell>
                   <TableCell className="font-medium">{d.nama}</TableCell>
@@ -537,8 +610,26 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle><AlertDialogDescription>Pengguna yang dihapus tidak dapat dikembalikan.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle><AlertDialogDescription>Pengguna yang dihapus tidak dapat dikembalikan. Jadwal guru yang bersangkutan juga akan dihapus, namun data kehadiran pembelajaran tetap tersimpan.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Hapus</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus {selectedIds.size} Pengguna?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedIds.size} pengguna yang dipilih akan dihapus secara permanen. Jadwal guru yang bersangkutan juga akan dihapus, namun data kehadiran pembelajaran tetap tersimpan. Tindakan ini tidak dapat dikembalikan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground">
+              Hapus {selectedIds.size} Pengguna
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
