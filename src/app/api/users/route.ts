@@ -147,16 +147,44 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Salah satu pengguna tidak ditemukan' }, { status: 404 });
     }
 
-    // For each guru being deleted, cascade delete their jadwal
-    // But NOT their kehadiran_mengajar
+    // For each guru being deleted, cascade delete their kehadiran_mengajar + Cloudinary photos, then jadwal
     const guruIds = existing.rows
       .filter((r: any) => r.role === 'guru')
       .map((r: any) => r.id as string);
 
-    for (const guruId of guruIds) {
+    if (guruIds.length > 0) {
+      const guruPlaceholders = guruIds.map(() => '?').join(', ');
+
+      // 1. Get all kehadiran photos for these gurus (for Cloudinary cleanup)
+      const kehadiranWithPhotos = await turso.execute({
+        sql: `SELECT foto_mengajar FROM kehadiran_mengajar WHERE guru_id IN (${guruPlaceholders}) AND foto_mengajar IS NOT NULL`,
+        args: guruIds,
+      });
+
+      // 2. Delete Cloudinary photos
+      const cloudinaryPhotos = kehadiranWithPhotos.rows
+        .map(r => r.foto_mengajar as string)
+        .filter((url): url is string => !!(url && url.includes('cloudinary.com')));
+
+      if (cloudinaryPhotos.length > 0) {
+        try {
+          const { deleteFromCloudinary } = await import('@/lib/cloudinary');
+          await Promise.allSettled(cloudinaryPhotos.map(url => deleteFromCloudinary(url)));
+        } catch (e) {
+          console.error('Failed to delete some kehadiran photos from Cloudinary:', e);
+        }
+      }
+
+      // 3. Delete kehadiran_mengajar first (to avoid FK issues)
       await turso.execute({
-        sql: 'DELETE FROM jadwal WHERE guru_id = ?',
-        args: [guruId],
+        sql: `DELETE FROM kehadiran_mengajar WHERE guru_id IN (${guruPlaceholders})`,
+        args: guruIds,
+      });
+
+      // 4. Delete jadwal
+      await turso.execute({
+        sql: `DELETE FROM jadwal WHERE guru_id IN (${guruPlaceholders})`,
+        args: guruIds,
       });
     }
 

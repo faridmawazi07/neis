@@ -18,18 +18,16 @@ export async function GET(req: NextRequest) {
     const kelas_id = searchParams.get('kelas_id');
     const search = searchParams.get('search');
 
-    // Use COALESCE to prefer snapshot data (frozen at input time) over JOIN data
-    // This ensures historical data is accurate even if jadwal is edited/deleted later
     let sql = `SELECT km.*,
-      COALESCE(km.snapshot_guru_nama, u.nama) as guru_nama,
-      COALESCE(km.snapshot_guru_nip, u.nip) as guru_nip,
+      u.nama as guru_nama,
+      u.nip as guru_nip,
       u.foto_profile as guru_foto,
-      COALESCE(km.snapshot_jam_ke, j.jam_ke) as jam_ke,
-      COALESCE(km.snapshot_jam_mulai, j.jam_mulai) as jam_mulai,
-      COALESCE(km.snapshot_jam_selesai, j.jam_selesai) as jam_selesai,
-      COALESCE(km.snapshot_hari, h.nama_hari) as nama_hari,
-      COALESCE(km.snapshot_kelas, k.nama_kelas) as nama_kelas,
-      COALESCE(km.snapshot_mapel, m.nama_mapel) as nama_mapel,
+      j.jam_ke,
+      j.jam_mulai,
+      j.jam_selesai,
+      h.nama_hari,
+      k.nama_kelas,
+      m.nama_mapel,
       sk.nama_status,
       km.siswa_absen_json
       FROM kehadiran_mengajar km
@@ -59,17 +57,15 @@ export async function GET(req: NextRequest) {
       args.push(tanggal_to);
     }
     if (kelas_id) {
-      // For kelas_id filter, we need to check both snapshot and JOIN
-      // since jadwal might be deleted (j.kelas_id would be NULL)
-      sql += ' AND (j.kelas_id = ? OR (j.kelas_id IS NULL AND km.snapshot_kelas = (SELECT nama_kelas FROM kelas WHERE id = ?)))';
-      args.push(kelas_id, kelas_id);
+      sql += ' AND j.kelas_id = ?';
+      args.push(kelas_id);
     }
     if (search) {
-      sql += ' AND (u.nama LIKE ? OR u.nip LIKE ? OR km.snapshot_guru_nama LIKE ? OR km.snapshot_guru_nip LIKE ?)';
-      args.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      sql += ' AND (u.nama LIKE ? OR u.nip LIKE ?)';
+      args.push(`%${search}%`, `%${search}%`);
     }
 
-    sql += ' ORDER BY km.tanggal DESC, km.snapshot_jam_ke ASC';
+    sql += ' ORDER BY km.tanggal DESC, j.jam_ke ASC';
 
     const result = await turso.execute({ sql, args });
     return NextResponse.json({ data: result.rows });
@@ -77,54 +73,6 @@ export async function GET(req: NextRequest) {
     console.error('Kehadiran GET error:', error);
     return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 });
   }
-}
-
-/**
- * Get snapshot data for a jadwal at the time of kehadiran creation.
- * This "freezes" the jadwal data so changes later don't affect historical records.
- */
-async function getSnapshotData(jadwalId: string, guruId: string): Promise<{
-  snapshot_guru_nama: string;
-  snapshot_guru_nip: string;
-  snapshot_mapel: string;
-  snapshot_kelas: string;
-  snapshot_hari: string;
-  snapshot_jam_ke: number;
-  snapshot_jam_mulai: string;
-  snapshot_jam_selesai: string;
-}> {
-  // Get guru name and NIP
-  const guruResult = await turso.execute({
-    sql: 'SELECT nama, nip FROM users WHERE id = ?',
-    args: [guruId],
-  });
-  const guruNama = guruResult.rows[0]?.nama as string || '';
-  const guruNip = guruResult.rows[0]?.nip as string || '';
-
-  // Get jadwal info with joined names
-  const jadwalResult = await turso.execute({
-    sql: `SELECT j.jam_ke, j.jam_mulai, j.jam_selesai,
-            h.nama_hari, k.nama_kelas, m.nama_mapel
-          FROM jadwal j
-          LEFT JOIN hari h ON j.hari_id = h.id
-          LEFT JOIN kelas k ON j.kelas_id = k.id
-          LEFT JOIN mapel m ON j.mapel_id = m.id
-          WHERE j.id = ?`,
-    args: [jadwalId],
-  });
-
-  const jadwalRow = jadwalResult.rows[0] || {};
-
-  return {
-    snapshot_guru_nama: guruNama,
-    snapshot_guru_nip: guruNip,
-    snapshot_mapel: jadwalRow.nama_mapel as string || '',
-    snapshot_kelas: jadwalRow.nama_kelas as string || '',
-    snapshot_hari: jadwalRow.nama_hari as string || '',
-    snapshot_jam_ke: jadwalRow.jam_ke as number || 0,
-    snapshot_jam_mulai: jadwalRow.jam_mulai as string || '',
-    snapshot_jam_selesai: jadwalRow.jam_selesai as string || '',
-  };
 }
 
 export async function POST(req: NextRequest) {
@@ -212,15 +160,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Kehadiran untuk jadwal dan tanggal ini sudah diisi' }, { status: 409 });
     }
 
-    // Get snapshot data at the time of creation
-    const snapshot = await getSnapshotData(jadwal_id, guru_id);
-
     const id = uuidv4();
     await turso.execute({
-      sql: `INSERT INTO kehadiran_mengajar (id, guru_id, jadwal_id, status_kehadiran_id, tanggal, materi_pembelajaran, foto_mengajar, jumlah_hadir, jumlah_izin_sakit, jumlah_alfa, jumlah_siswa_total, siswa_absen_json, snapshot_guru_nama, snapshot_guru_nip, snapshot_mapel, snapshot_kelas, snapshot_hari, snapshot_jam_ke, snapshot_jam_mulai, snapshot_jam_selesai)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [id, guru_id, jadwal_id, status_kehadiran_id, tanggal, materi_pembelajaran, foto_mengajar, jumlah_hadir, jumlah_izin_sakit, jumlah_alfa, jumlah_siswa_total, siswa_absen_json, 
-        snapshot.snapshot_guru_nama, snapshot.snapshot_guru_nip, snapshot.snapshot_mapel, snapshot.snapshot_kelas, snapshot.snapshot_hari, snapshot.snapshot_jam_ke, snapshot.snapshot_jam_mulai, snapshot.snapshot_jam_selesai],
+      sql: `INSERT INTO kehadiran_mengajar (id, guru_id, jadwal_id, status_kehadiran_id, tanggal, materi_pembelajaran, foto_mengajar, jumlah_hadir, jumlah_izin_sakit, jumlah_alfa, jumlah_siswa_total, siswa_absen_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, guru_id, jadwal_id, status_kehadiran_id, tanggal, materi_pembelajaran, foto_mengajar, jumlah_hadir, jumlah_izin_sakit, jumlah_alfa, jumlah_siswa_total, siswa_absen_json],
     });
 
     return NextResponse.json({ message: 'Kehadiran berhasil disimpan', id });

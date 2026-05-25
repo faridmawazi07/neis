@@ -162,7 +162,7 @@ export async function PUT(req: NextRequest) {
         
         if (criticalChanged) {
           return NextResponse.json({ 
-            error: `Jadwal ini sudah memiliki ${kehadiranCount.rows[0].count} data kehadiran. Mengubah guru/kelas/mapel/hari akan membuat data kehadiran tidak konsisten. Hanya jam yang bisa diubah.`,
+            error: `Jadwal tidak dapat diubah karena sudah memiliki ${kehadiranCount.rows[0].count} data kehadiran. Hapus data kehadiran terlebih dahulu untuk mengubah guru/kelas/mapel/hari.`,
             hasKehadiran: true,
             kehadiranCount: kehadiranCount.rows[0].count,
             code: 'JADWAL_HAS_KEHADIRAN'
@@ -258,7 +258,7 @@ export async function DELETE(req: NextRequest) {
         const totalKehadiran = kehadiranCheck.rows.reduce((sum: number, r: any) => sum + (r.count as number), 0);
         const affectedJadwal = kehadiranCheck.rows.length;
         return NextResponse.json({ 
-          error: `${affectedJadwal} jadwal memiliki ${totalKehadiran} data kehadiran. Menghapus jadwal akan membuat data kehadiran kehilangan referensi. Hapus data kehadiran terlebih dahulu, atau gunakan hapus paksa.`,
+          error: `Jadwal tidak dapat dihapus karena memiliki ${totalKehadiran} data kehadiran. Hapus data kehadiran terlebih dahulu.`,
           hasKehadiran: true,
           kehadiranCount: totalKehadiran,
           affectedJadwal,

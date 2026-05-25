@@ -647,7 +647,7 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle><AlertDialogDescription>Pengguna yang dihapus tidak dapat dikembalikan. Jadwal guru yang bersangkutan juga akan dihapus, namun data kehadiran pembelajaran tetap tersimpan.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>Hapus Pengguna?</AlertDialogTitle><AlertDialogDescription>Pengguna yang dihapus tidak dapat dikembalikan. Semua jadwal dan data kehadiran mengajar guru yang bersangkutan juga akan ikut terhapus secara permanen.</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Hapus</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -658,7 +658,7 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus {selectedIds.size} Pengguna?</AlertDialogTitle>
             <AlertDialogDescription>
-              {selectedIds.size} pengguna yang dipilih akan dihapus secara permanen. Jadwal guru yang bersangkutan juga akan dihapus, namun data kehadiran pembelajaran tetap tersimpan. Tindakan ini tidak dapat dikembalikan.
+              {selectedIds.size} pengguna yang dipilih akan dihapus secara permanen. Semua jadwal dan data kehadiran mengajar guru yang bersangkutan juga akan ikut terhapus. Tindakan ini tidak dapat dikembalikan.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
