@@ -343,6 +343,10 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
           <DialogHeader><DialogTitle>Edit Data Pegawai</DialogTitle></DialogHeader>
           {editModal && (
             <form className="space-y-4" autoComplete="off" onSubmit={(e) => { e.preventDefault(); handleEditSubmit(); }}>
+              {/* Honeypot - mencegah browser autofill */}
+              <input type="text" name="fake-username" className="hidden" tabIndex={-1} autoComplete="off" />
+              <input type="password" name="fake-password" className="hidden" tabIndex={-1} autoComplete="new-password" />
+
               {/* Photo */}
               <div className="space-y-2">
                 <Label>Foto Profile</Label>
@@ -398,10 +402,13 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                 <Label htmlFor="pegawai-nip">NIP</Label>
                 <Input
                   id="pegawai-nip"
+                  name="peg-nip-field"
                   value={editForm.nip}
                   onChange={(e) => setEditForm({ ...editForm, nip: e.target.value })}
                   placeholder="Masukkan NIP"
-                  autoComplete="new-password"
+                  autoComplete="off"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
                 />
               </div>
 
@@ -410,10 +417,13 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                 <Label htmlFor="pegawai-nama">Nama</Label>
                 <Input
                   id="pegawai-nama"
+                  name="peg-nama-field"
                   value={editForm.nama}
                   onChange={(e) => setEditForm({ ...editForm, nama: e.target.value })}
                   placeholder="Masukkan nama"
-                  autoComplete="new-password"
+                  autoComplete="off"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
                 />
               </div>
 
@@ -434,7 +444,7 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
               <div className="space-y-2">
                 <Label>Jenis Kelamin</Label>
                 <Select value={editForm.jenis_kelamin} onValueChange={(v) => setEditForm({ ...editForm, jenis_kelamin: v })}>
-                  <SelectTrigger><SelectValue placeholder="Pilih jenis kelamin" /></SelectTrigger>
+                  <SelectTrigger autoComplete="off" data-lpignore="true"><SelectValue placeholder="Pilih jenis kelamin" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="L">Laki-laki</SelectItem>
                     <SelectItem value="P">Perempuan</SelectItem>
@@ -447,10 +457,13 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                 <Label htmlFor="pegawai-tgl-lahir">Tanggal Lahir</Label>
                 <Input
                   id="pegawai-tgl-lahir"
+                  name="peg-tgl-field"
                   type="date"
                   value={editForm.tanggal_lahir}
                   onChange={(e) => setEditForm({ ...editForm, tanggal_lahir: e.target.value })}
-                  autoComplete="new-password"
+                  autoComplete="off"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
                 />
               </div>
             </form>
