@@ -221,7 +221,27 @@ async function doPull(gitToken: string, targetBranch: string): Promise<string> {
   try {
     await execAsync(`git remote set-url origin https://${gitToken}@github.com/faridmawazi07/neis.git`, { cwd: PROJECT_DIR });
     await execAsync('git fetch --all', { cwd: PROJECT_DIR, timeout: 120000 });
+    // Stash any uncommitted changes before resetting to prevent data loss
+    let hasStash = false;
+    try {
+      const { stdout } = await execAsync('git status --porcelain', { cwd: PROJECT_DIR });
+      if (stdout.trim().length > 0) {
+        await execAsync('git stash --include-untracked', { cwd: PROJECT_DIR });
+        hasStash = true;
+        console.log('[GitControl] 📦 Stashed uncommitted changes before pull');
+      }
+    } catch {}
     await execAsync(`git reset --hard origin/${targetBranch}`, { cwd: PROJECT_DIR });
+    // Restore stashed changes after reset
+    if (hasStash) {
+      try {
+        await execAsync('git stash pop', { cwd: PROJECT_DIR });
+        console.log('[GitControl] 📦 Restored stashed changes after pull');
+      } catch (stashErr: any) {
+        // Stash pop can fail on conflicts - log but don't fail the pull
+        console.error('[GitControl] ⚠️ Stash pop failed (conflicts?):', stashErr.message);
+      }
+    }
     await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
     markSynced();
     updateSandboxId(); // Update sandbox ID after successful pull (recovery)
