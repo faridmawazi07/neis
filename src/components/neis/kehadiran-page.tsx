@@ -39,7 +39,12 @@ export function KehadiranPage() {
   const [search, setSearch] = useState('');
 
   // Date filters
-  const [tanggalGuru, setTanggalGuru] = useState<Date>(new Date());
+  const [tanggalGuruFrom, setTanggalGuruFrom] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(1); // first day of current month
+    return d;
+  });
+  const [tanggalGuruTo, setTanggalGuruTo] = useState<Date>(new Date());
   const [tanggalFrom, setTanggalFrom] = useState<Date>(new Date());
   const [tanggalTo, setTanggalTo] = useState<Date>(new Date());
 
@@ -60,6 +65,9 @@ export function KehadiranPage() {
 
   // Materi popup
   const [materiPopup, setMateriPopup] = useState<string>('');
+
+  // Absen (I/S & Alfa) names popup
+  const [absenPopup, setAbsenPopup] = useState<{ type: string; names: string[] } | null>(null);
 
   // Holiday check
   const [isHoliday, setIsHoliday] = useState(false);
@@ -93,7 +101,7 @@ export function KehadiranPage() {
     try {
       let url = '/api/kehadiran-mengajar?';
       if (isGuru) {
-        url += `guru_id=${user?.id}&tanggal=${format(tanggalGuru, 'yyyy-MM-dd')}`;
+        url += `guru_id=${user?.id}&tanggal_from=${format(tanggalGuruFrom, 'yyyy-MM-dd')}&tanggal_to=${format(tanggalGuruTo, 'yyyy-MM-dd')}`;
       } else {
         url += `tanggal_from=${format(tanggalFrom, 'yyyy-MM-dd')}&tanggal_to=${format(tanggalTo, 'yyyy-MM-dd')}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
@@ -111,12 +119,12 @@ export function KehadiranPage() {
     } finally {
       setLoading(false);
     }
-  }, [isGuru, user?.id, tanggalGuru, tanggalFrom, tanggalTo, search, selectedKelasId]);
+  }, [isGuru, user?.id, tanggalGuruFrom, tanggalGuruTo, tanggalFrom, tanggalTo, search, selectedKelasId]);
 
   const checkHoliday = useCallback(async () => {
     if (!isGuru) return;
     try {
-      const tgl = format(tanggalGuru, 'yyyy-MM-dd');
+      const tgl = format(new Date(), 'yyyy-MM-dd');
       const res = await fetch(`/api/hari-libur?tanggal=${tgl}`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
@@ -132,7 +140,7 @@ export function KehadiranPage() {
       const currentTime = hours * 60 + minutes;
       setOutsideWorkHours(dayOfWeek === 0 || dayOfWeek === 6 || currentTime < 360 || currentTime > 1200);
     } catch {}
-  }, [isGuru, tanggalGuru]);
+  }, [isGuru]);
 
   useEffect(() => {
     fetchData();
@@ -172,7 +180,7 @@ export function KehadiranPage() {
     doc.text('Kehadiran Mengajar', 14, 15);
     doc.setFontSize(10);
     if (isGuru) {
-      doc.text(`Tanggal: ${format(tanggalGuru, 'dd MMMM yyyy', { locale: idLocale })}`, 14, 22);
+      doc.text(`Periode: ${format(tanggalGuruFrom, 'dd MMM yyyy')} - ${format(tanggalGuruTo, 'dd MMM yyyy')}`, 14, 22);
     } else {
       doc.text(`Periode: ${format(tanggalFrom, 'dd MMM yyyy')} - ${format(tanggalTo, 'dd MMM yyyy')}`, 14, 22);
     }
@@ -241,17 +249,30 @@ export function KehadiranPage() {
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               {isGuru ? (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-1 w-fit">
-                      <CalendarIcon className="h-3.5 w-3.5" />
-                      {format(tanggalGuru, 'dd MMM yyyy', { locale: idLocale })}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={tanggalGuru} onSelect={(d) => d && setTanggalGuru(d)} />
-                  </PopoverContent>
-                </Popover>
+                <>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1">
+                        <CalendarIcon className="h-3.5 w-3.5" />
+                        Dari: {format(tanggalGuruFrom, 'dd MMM yyyy')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={tanggalGuruFrom} onSelect={(d) => d && setTanggalGuruFrom(d)} />
+                    </PopoverContent>
+                  </Popover>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1">
+                        <CalendarIcon className="h-3.5 w-3.5" />
+                        Sampai: {format(tanggalGuruTo, 'dd MMM yyyy')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={tanggalGuruTo} onSelect={(d) => d && setTanggalGuruTo(d)} />
+                    </PopoverContent>
+                  </Popover>
+                </>
               ) : (
                 <>
                   <Popover>
@@ -322,7 +343,7 @@ export function KehadiranPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {!isGuru && <TableHead>Tanggal</TableHead>}
+                    <TableHead>Tanggal</TableHead>
                     {!isGuru && <TableHead>Guru</TableHead>}
                     <TableHead>Kelas</TableHead>
                     <TableHead>Mapel</TableHead>
@@ -341,7 +362,7 @@ export function KehadiranPage() {
                 <TableBody>
                   {data.map((d) => (
                     <TableRow key={d.id}>
-                      {!isGuru && <TableCell className="text-xs">{d.tanggal}</TableCell>}
+                      <TableCell className="text-xs">{d.tanggal}</TableCell>
                       {!isGuru && (
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -360,8 +381,46 @@ export function KehadiranPage() {
                       <TableCell>{d.nama_kelas}</TableCell>
                       <TableCell>{d.nama_mapel}</TableCell>
                       <TableCell className="text-center">{d.jumlah_hadir}</TableCell>
-                      <TableCell className="text-center">{d.jumlah_izin_sakit}</TableCell>
-                      <TableCell className="text-center">{d.jumlah_alfa}</TableCell>
+                      <TableCell className="text-center">
+                        {d.jumlah_izin_sakit > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                const parsed = JSON.parse(d.siswa_absen_json || '{}');
+                                setAbsenPopup({ type: 'Izin/Sakit', names: parsed.izin_sakit || [] });
+                              } catch {
+                                setAbsenPopup({ type: 'Izin/Sakit', names: [] });
+                              }
+                            }}
+                            className="inline-flex items-center justify-center text-ocean hover:underline cursor-pointer font-medium"
+                          >
+                            {d.jumlah_izin_sakit}
+                          </button>
+                        ) : (
+                          <span>0</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {d.jumlah_alfa > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                const parsed = JSON.parse(d.siswa_absen_json || '{}');
+                                setAbsenPopup({ type: 'Alfa', names: parsed.alfa || [] });
+                              } catch {
+                                setAbsenPopup({ type: 'Alfa', names: [] });
+                              }
+                            }}
+                            className="inline-flex items-center justify-center text-destructive hover:underline cursor-pointer font-medium"
+                          >
+                            {d.jumlah_alfa}
+                          </button>
+                        ) : (
+                          <span>0</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-center">{d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa)}</TableCell>
                       <TableCell>
                         {d.materi_pembelajaran ? (
@@ -466,6 +525,36 @@ export function KehadiranPage() {
           <div className="text-sm whitespace-pre-wrap leading-relaxed max-h-[60vh] overflow-y-auto">
             {materiPopup}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Absen Names Popup (I/S & Alfa) */}
+      <Dialog open={!!absenPopup} onOpenChange={(open) => { if (!open) setAbsenPopup(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-ocean" /> Siswa {absenPopup?.type}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto">
+            {absenPopup && absenPopup.names.length > 0 ? (
+              <ul className="space-y-1">
+                {absenPopup.names.map((name, i) => (
+                  <li key={i} className="text-sm py-1.5 px-3 rounded-md bg-muted flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-medium w-5">{i + 1}.</span>
+                    <span>{name}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">Tidak ada data siswa</p>
+            )}
+          </div>
+          {absenPopup && absenPopup.names.length > 0 && (
+            <div className="text-xs text-muted-foreground text-right">
+              Total: {absenPopup.names.length} siswa
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
