@@ -9,7 +9,8 @@
 
 export async function register() {
   // Only run on server side (not in browser)
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
+  // Only run in development (sandbox) - not in production (Vercel)
+  if (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV !== 'production') {
     const { exec } = await import('child_process');
     const { promisify } = await import('util');
     const { readFileSync, writeFileSync, existsSync } = await import('fs');
