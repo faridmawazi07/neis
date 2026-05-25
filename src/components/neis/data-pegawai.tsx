@@ -15,7 +15,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, UserCheck, Trash2, Pencil, Upload, X, Eye, Camera, Image as ImageIcon } from 'lucide-react';
+import { Search, UserCheck, Trash2, Pencil, Upload, X, Eye, Camera, Image as ImageIcon, SwitchCamera } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ImageModal } from './image-modal';
 
@@ -59,6 +59,13 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
   const [editLoading, setEditLoading] = useState(false);
   const fileGalleryRef = useRef<HTMLInputElement>(null);
   const fileCameraRef = useRef<HTMLInputElement>(null);
+
+  // Camera dialog (WebRTC for desktop)
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -146,6 +153,94 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
     if (fileGalleryRef.current) fileGalleryRef.current.value = '';
     if (fileCameraRef.current) fileCameraRef.current.value = '';
   };
+
+  // Check if device is mobile (supports native camera capture)
+  const isMobile = useCallback(() => {
+    if (typeof navigator === 'undefined') return false;
+    return /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+  }, []);
+
+  // Start WebRTC camera
+  const startCamera = useCallback(async (facing: 'user' | 'environment' = 'user') => {
+    try {
+      // Stop any existing stream
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
+      });
+      setCameraStream(stream);
+      setCameraFacing(facing);
+      setCameraOpen(true);
+      // Wait for dialog to render, then attach stream to video
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 100);
+    } catch (err) {
+      console.error('Camera error:', err);
+      toast({ title: 'Kamera Tidak Tersedia', description: 'Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.', variant: 'destructive' });
+    }
+  }, [cameraStream, toast]);
+
+  // Stop camera
+  const stopCamera = useCallback(() => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      setCameraStream(null);
+    }
+    setCameraOpen(false);
+  }, [cameraStream]);
+
+  // Switch camera (front/back)
+  const switchCamera = useCallback(async () => {
+    const newFacing = cameraFacing === 'user' ? 'environment' : 'user';
+    await startCamera(newFacing);
+  }, [cameraFacing, startCamera]);
+
+  // Capture photo from video
+  const capturePhoto = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
+      setEditPhoto(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setEditPhotoPreview(reader.result as string);
+      reader.readAsDataURL(file);
+      stopCamera();
+    }, 'image/jpeg', 0.85);
+  }, [stopCamera]);
+
+  // Handle camera button click
+  const handleCameraClick = useCallback(() => {
+    if (isMobile()) {
+      // On mobile, use native capture attribute
+      fileCameraRef.current?.click();
+    } else {
+      // On desktop, use WebRTC
+      startCamera('user');
+    }
+  }, [isMobile, startCamera]);
+
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
 
   const handleEditSubmit = async () => {
     if (!editModal) return;
@@ -367,7 +462,7 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                   <Button type="button" variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => fileGalleryRef.current?.click()}>
                     <ImageIcon className="h-3 w-3" /> Galeri
                   </Button>
-                  <Button type="button" variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={() => fileCameraRef.current?.click()}>
+                  <Button type="button" variant="outline" size="sm" className="gap-1 h-7 text-xs" onClick={handleCameraClick}>
                     <Camera className="h-3 w-3" /> Kamera
                   </Button>
                   {editPhotoPreview && (
@@ -447,6 +542,52 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
       </AlertDialog>
 
       <ImageModal open={imageOpen} onClose={() => setImageOpen(false)} src={imageSrc} alt={imageAlt} />
+
+      {/* Camera Dialog (WebRTC for Desktop/Laptop) */}
+      <Dialog open={cameraOpen} onOpenChange={(open) => { if (!open) stopCamera(); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Ambil Foto</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="relative bg-black rounded-lg overflow-hidden aspect-[4/3]">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={switchCamera}
+                title="Ganti kamera"
+              >
+                <SwitchCamera className="h-4 w-4" />
+              </Button>
+              <Button
+                className="h-14 w-14 rounded-full bg-ocean hover:bg-ocean-dark text-white border-4 border-white shadow-lg"
+                onClick={capturePhoto}
+                title="Ambil foto"
+              >
+                <Camera className="h-6 w-6" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={stopCamera}
+                title="Tutup kamera"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <canvas ref={canvasRef} className="hidden" />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
