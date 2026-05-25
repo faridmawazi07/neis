@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { turso } from '@/lib/turso';
-import { verifyToken } from '@/lib/auth';
+import { verifyToken, hashPassword } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     const tanggal_lahir = formData.get('tanggal_lahir') as string | null;
     const foto_profile = formData.get('foto_profile') as File | null;
     const remove_photo = formData.get('remove_photo') as string | null;
+    const password = formData.get('password') as string | null;
 
     if (!id) {
       return NextResponse.json({ error: 'ID pengguna wajib diisi' }, { status: 400 });
@@ -106,6 +107,16 @@ export async function POST(req: NextRequest) {
       // Admin explicitly removes photo
       updates.push('foto_profile = ?');
       args.push(null);
+    }
+
+    // Handle password change - only admin can set password for others
+    if (password && password.trim()) {
+      if (payload.role !== 'admin') {
+        return NextResponse.json({ error: 'Forbidden - Hanya admin yang dapat mengubah password pengguna lain' }, { status: 403 });
+      }
+      const hashed = await hashPassword(password.trim());
+      updates.push('password = ?');
+      args.push(hashed);
     }
 
     if (updates.length === 0) {

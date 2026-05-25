@@ -54,11 +54,14 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
     role: '',
     jenis_kelamin: '',
     tanggal_lahir: '',
+    password: '',
   });
   const [editPhoto, setEditPhoto] = useState<File | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string>('');
   const [editLoading, setEditLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [jkFocused, setJkFocused] = useState(false);
+  const [tglFocused, setTglFocused] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -126,9 +129,12 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
       role: d.role || '',
       jenis_kelamin: d.jenis_kelamin || '',
       tanggal_lahir: d.tanggal_lahir || '',
+      password: '',
     });
     setEditPhoto(null);
     setEditPhotoPreview(d.foto_profile || '');
+    setJkFocused(false);
+    setTglFocused(false);
   };
 
   const handleEditPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -162,6 +168,9 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
       formData.append('role', editForm.role);
       formData.append('jenis_kelamin', editForm.jenis_kelamin);
       formData.append('tanggal_lahir', editForm.tanggal_lahir);
+      if (editForm.password.trim()) {
+        formData.append('password', editForm.password.trim());
+      }
       if (editPhoto) {
         formData.append('foto_profile', editPhoto);
       } else if (!editPhotoPreview && editModal.foto_profile) {
@@ -440,11 +449,20 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                 </Select>
               </div>
 
-              {/* Jenis Kelamin */}
+              {/* Jenis Kelamin - readonly trick to prevent browser autofill */}
               <div className="space-y-2">
                 <Label>Jenis Kelamin</Label>
-                <Select value={editForm.jenis_kelamin} onValueChange={(v) => setEditForm({ ...editForm, jenis_kelamin: v })}>
-                  <SelectTrigger autoComplete="off" data-lpignore="true"><SelectValue placeholder="Pilih jenis kelamin" /></SelectTrigger>
+                <Select 
+                  value={editForm.jenis_kelamin} 
+                  onValueChange={(v) => setEditForm({ ...editForm, jenis_kelamin: v })}
+                  open={jkFocused}
+                  onOpenChange={(open) => setJkFocused(open)}
+                >
+                  <SelectTrigger 
+                    onFocus={() => setJkFocused(true)}
+                    autoComplete="off" 
+                    data-lpignore="true"
+                  ><SelectValue placeholder="Pilih jenis kelamin" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="L">Laki-laki</SelectItem>
                     <SelectItem value="P">Perempuan</SelectItem>
@@ -452,7 +470,7 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                 </Select>
               </div>
 
-              {/* Tanggal Lahir */}
+              {/* Tanggal Lahir - readonly trick to prevent browser autofill */}
               <div className="space-y-2">
                 <Label htmlFor="pegawai-tgl-lahir">Tanggal Lahir</Label>
                 <Input
@@ -461,10 +479,30 @@ export function DataPegawaiPage({ initialTab = 'data' }: DataPegawaiProps) {
                   type="date"
                   value={editForm.tanggal_lahir}
                   onChange={(e) => setEditForm({ ...editForm, tanggal_lahir: e.target.value })}
+                  readOnly={!tglFocused}
+                  onFocus={() => setTglFocused(true)}
+                  onBlur={() => setTglFocused(false)}
                   autoComplete="off"
                   data-lpignore="true"
                   data-1p-ignore="true"
                 />
+              </div>
+
+              {/* Password */}
+              <div className="space-y-2">
+                <Label htmlFor="pegawai-password">Password Baru</Label>
+                <Input
+                  id="pegawai-password"
+                  name="peg-pwd-field"
+                  type="password"
+                  value={editForm.password}
+                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  placeholder="Kosongkan jika tidak ingin mengubah password"
+                  autoComplete="new-password"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                />
+                <p className="text-[11px] text-muted-foreground">Biarkan kosong jika tidak ingin mengubah password</p>
               </div>
             </form>
           )}
