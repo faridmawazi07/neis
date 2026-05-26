@@ -153,3 +153,22 @@ Stage Summary:
 - Cloudinary indicator shows "Terhubung" with "Free Plan" badge
 - Sandbox reset workflow: code in .neis.env survives resets → GitHub token + Cloudinary keys always available
 - Workflow: Sandbox → auto-push to dev → merge dev→main on GitHub → Vercel production deploy
+
+---
+Task ID: 1
+Agent: main
+Task: Fix calendar popup collapsing after date selection
+
+Work Log:
+- Identified root cause: Popover components wrapping Calendar were uncontrolled (no `open`/`onOpenChange` props)
+- When date selection triggered state changes (setDate, setJamKe, etc.), the re-render caused Radix Popover to lose its internal open state and collapse
+- Fixed by making all Popovers controlled with explicit `open` and `onOpenChange` state
+- Fixed in 3 files:
+  1. `dashboard.tsx` - Added `calendarOpen` and `jadwalCalendarOpen` state for the two popovers
+  2. `kehadiran-page.tsx` - Added `fromCalOpen` and `toCalOpen` state for the two date range popovers
+  3. `master-data.tsx` - Added `holidayCalOpen` state for the holiday date popover
+
+Stage Summary:
+- All calendar popovers now stay open after selecting a date
+- The Popover only closes when user explicitly clicks outside or clicks the trigger button
+- Lint passes cleanly, no compilation errors

@@ -51,6 +51,8 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   });
   const [jadwalFilter, setJadwalFilter] = useState<'all' | 'sudah' | 'belum'>('all');
   const [jamKe, setJamKe] = useState<string>('');
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [jadwalCalendarOpen, setJadwalCalendarOpen] = useState(false);
 
   // Pending approval modal
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
@@ -431,7 +433,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <CardTitle className="text-base">Kehadiran Siswa</CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
-              <Popover>
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1">
                     <CalendarIcon className="h-3.5 w-3.5" />
@@ -531,7 +533,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <CardTitle className="text-base">Jadwal Pembelajaran</CardTitle>
           <div className="flex items-center gap-2 flex-wrap">
-            <Popover>
+            <Popover open={jadwalCalendarOpen} onOpenChange={setJadwalCalendarOpen}>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1">
                   <CalendarIcon className="h-3.5 w-3.5" />

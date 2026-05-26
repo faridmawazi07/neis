@@ -48,6 +48,8 @@ export function KehadiranPage() {
     return d;
   });
   const [tanggalTo, setTanggalTo] = useState<Date>(new Date());
+  const [fromCalOpen, setFromCalOpen] = useState(false);
+  const [toCalOpen, setToCalOpen] = useState(false);
 
   // Kelas filter
   const [kelasList, setKelasList] = useState<any[]>([]);
@@ -432,7 +434,7 @@ export function KehadiranPage() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <Popover>
+              <Popover open={fromCalOpen} onOpenChange={setFromCalOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1">
                     <CalendarIcon className="h-3.5 w-3.5" />
@@ -443,7 +445,7 @@ export function KehadiranPage() {
                   <Calendar mode="single" selected={tanggalFrom} onSelect={(d) => d && setTanggalFrom(d)} />
                 </PopoverContent>
               </Popover>
-              <Popover>
+              <Popover open={toCalOpen} onOpenChange={setToCalOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1">
                     <CalendarIcon className="h-3.5 w-3.5" />

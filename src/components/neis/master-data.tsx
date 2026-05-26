@@ -555,6 +555,7 @@ export function HariLiburMaster() {
   const [formOpen, setFormOpen] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [formTanggal, setFormTanggal] = useState<Date>();
+  const [holidayCalOpen, setHolidayCalOpen] = useState(false);
   const [formKeterangan, setFormKeterangan] = useState('');
   const [deleteTanggal, setDeleteTanggal] = useState<string | null>(null);
   const [selectedTanggals, setSelectedTanggals] = useState<string[]>([]);
@@ -697,7 +698,7 @@ export function HariLiburMaster() {
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Tanggal</Label>
-            <Popover>
+            <Popover open={holidayCalOpen} onOpenChange={setHolidayCalOpen}>
               <PopoverTrigger asChild>
                 <Button variant="outline" className="w-full justify-start gap-2">
                   <CalendarIcon className="h-4 w-4" />
