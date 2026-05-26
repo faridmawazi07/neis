@@ -172,3 +172,24 @@ Stage Summary:
 - All calendar popovers now stay open after selecting a date
 - The Popover only closes when user explicitly clicks outside or clicks the trigger button
 - Lint passes cleanly, no compilation errors
+
+---
+Task ID: 2
+Agent: main
+Task: Fix Git Control doing pull instead of push + verify changes not lost
+
+Work Log:
+- Diagnosed root cause: `canPush()` and `auto-push-trigger` were too aggressive — sandbox reset detection blocked push and triggered pull instead
+- `isSandboxReset()` could trigger falsely (filesystem stats change during builds)
+- When local had changes to push, the system would pull from GitHub instead, risking overwriting local work
+- Rewrote `canPush()`: now allows push when local is ahead OR has uncommitted changes, only blocks when truly nothing to push
+- Rewrote `auto-push-trigger`: tries to push FIRST, only falls back to pull when there are NO local changes
+- Updated frontend push button: enabled when local has changes, disabled only when no changes AND not synced
+- Updated `doPush()`: marks synced + updates sandbox ID after successful push
+- Manually pushed all changes to both origin/main and origin/dev
+- Verified auto-push now works correctly: log shows `[AutoPush] ✅ Berhasil push ke GitHub`
+
+Stage Summary:
+- Push now prioritized over pull when local has changes
+- All calendar fix changes verified intact and pushed to GitHub
+- Both branches (main, dev) are in sync at commit 8fd843e
