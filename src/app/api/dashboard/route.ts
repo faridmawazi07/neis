@@ -97,20 +97,20 @@ export async function GET(req: NextRequest) {
       });
       kehadiranSiswa = kehadiranSiswaResult.rows;
     } else {
-      // No jam_ke filter — show all, aggregate by kelas using MAX (fallback)
+      // No jam_ke filter — show per kelas, take the record with highest jumlah_siswa_total
+      // All fields come from the same row (not mixed from different records)
       const kehadiranSiswaResult = await turso.execute({
-        sql: `SELECT j.kelas_id, k.nama_kelas,
-          MAX(km.jumlah_hadir) as jumlah_hadir,
-          MAX(km.jumlah_izin_sakit) as jumlah_izin_sakit,
-          MAX(km.jumlah_alfa) as jumlah_alfa,
-          MAX(km.jumlah_siswa_total) as jumlah_siswa_total,
-          MAX(km.siswa_absen_json) as siswa_absen_json
+        sql: `SELECT * FROM (
+          SELECT j.kelas_id, k.nama_kelas,
+            km.jumlah_hadir, km.jumlah_izin_sakit, km.jumlah_alfa,
+            km.jumlah_siswa_total, km.siswa_absen_json,
+            ROW_NUMBER() OVER (PARTITION BY j.kelas_id ORDER BY km.jumlah_siswa_total DESC) as rn
           FROM kehadiran_mengajar km
           LEFT JOIN jadwal j ON km.jadwal_id = j.id
           LEFT JOIN kelas k ON j.kelas_id = k.id
           WHERE km.tanggal = ?
-          GROUP BY j.kelas_id
-          ORDER BY k.nama_kelas ASC`,
+        ) WHERE rn = 1
+        ORDER BY nama_kelas ASC`,
         args: [tanggal],
       });
       kehadiranSiswa = kehadiranSiswaResult.rows;
