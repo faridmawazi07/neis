@@ -226,6 +226,46 @@ export function KehadiranPage() {
     }
   };
 
+  // Helper: group export data by guru name (abjad) then by tanggal (terlama)
+  const groupExportData = () => {
+    // Sort: guru name A-Z, then tanggal terlama (ascending), then jam ke
+    const sorted = [...data].sort((a, b) => {
+      const guruCmp = (a.guru_nama || '').localeCompare(b.guru_nama || '');
+      if (guruCmp !== 0) return guruCmp;
+      const dateCmp = (a.tanggal || '').localeCompare(b.tanggal || '');
+      if (dateCmp !== 0) return dateCmp;
+      return String(a.jam_ke || '').localeCompare(String(b.jam_ke || ''));
+    });
+
+    const guruMap = new Map<string, { guruNama: string; guruNip: string; dates: Map<string, any[]> }>();
+    sorted.forEach((d) => {
+      const gKey = d.guru_nama || 'Tanpa Nama';
+      if (!guruMap.has(gKey)) {
+        guruMap.set(gKey, { guruNama: gKey, guruNip: d.guru_nip || '-', dates: new Map() });
+      }
+      const guru = guruMap.get(gKey)!;
+      const dKey = d.tanggal || '-';
+      if (!guru.dates.has(dKey)) {
+        guru.dates.set(dKey, []);
+      }
+      guru.dates.get(dKey)!.push(d);
+    });
+
+    const result: { guruNama: string; guruNip: string; dates: { tanggal: string; entries: any[] }[] }[] = [];
+    const sortedGuruKeys = Array.from(guruMap.keys()).sort((a, b) => a.localeCompare(b));
+    sortedGuruKeys.forEach((gKey) => {
+      const guru = guruMap.get(gKey)!;
+      const sortedDateKeys = Array.from(guru.dates.keys()).sort();
+      result.push({
+        guruNama: guru.guruNama,
+        guruNip: guru.guruNip,
+        dates: sortedDateKeys.map((dk) => ({ tanggal: dk, entries: guru.dates.get(dk)! })),
+      });
+    });
+
+    return result;
+  };
+
   const handleExportPDF = async () => {
     const { default: jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
@@ -235,41 +275,46 @@ export function KehadiranPage() {
     doc.setFontSize(10);
     doc.text(`Periode: ${format(tanggalFrom, 'dd MMM yyyy')} - ${format(tanggalTo, 'dd MMM yyyy')}`, 14, 22);
 
-    // Sort by guru name alphabetically
-    const sorted = [...data].sort((a, b) => (a.guru_nama || '').localeCompare(b.guru_nama || ''));
+    const grouped = groupExportData();
 
-    // Build body with rowSpan for guru column
     const body: any[] = [];
-    sorted.forEach((d, i) => {
-      // Count how many rows this guru has
-      const sameGuruRows = sorted.filter((r) => r.guru_nama === d.guru_nama);
-      const isFirstOfGroup = i === 0 || sorted[i - 1].guru_nama !== d.guru_nama;
-
-      const row: any[] = [
-        d.tanggal,
-        { content: d.guru_nama, rowSpan: isFirstOfGroup ? sameGuruRows.length : undefined },
-        d.nama_kelas,
-        d.nama_mapel,
-        d.jumlah_hadir,
-        d.jumlah_izin_sakit,
-        d.jumlah_alfa,
-        d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa),
-        d.materi_pembelajaran || '-',
-        d.jam_ke,
-        d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-',
-        d.nama_status,
-      ];
-      body.push(row);
+    grouped.forEach((guru) => {
+      let showGuru = true;
+      guru.dates.forEach((dateGroup) => {
+        let showTanggal = true;
+        dateGroup.entries.forEach((d) => {
+          const row: any[] = [
+            showTanggal ? dateGroup.tanggal : '',
+            showGuru ? { content: guru.guruNama, styles: { fontStyle: 'bold', fontSize: 7 } } : '',
+            showGuru ? { content: guru.guruNip, styles: { fontSize: 6 } } : '',
+            d.nama_kelas,
+            d.nama_mapel,
+            d.jumlah_hadir,
+            d.jumlah_izin_sakit,
+            d.jumlah_alfa,
+            d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa),
+            d.materi_pembelajaran || '-',
+            d.jam_ke,
+            d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-',
+            d.nama_status,
+          ];
+          body.push(row);
+          showGuru = false;
+          showTanggal = false;
+        });
+      });
     });
 
     autoTable(doc, {
       startY: 28,
-      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']],
+      head: [['Tanggal', 'Guru', 'NIP', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']],
       body,
       styles: { fontSize: 7, cellPadding: 2 },
       headStyles: { fontSize: 7, fillColor: [59, 130, 246] },
       columnStyles: {
-        1: { cellWidth: 28, fontStyle: 'bold' },
+        0: { cellWidth: 18 },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 20 },
       },
     });
     doc.save('kehadiran-mengajar.pdf');
@@ -277,47 +322,67 @@ export function KehadiranPage() {
 
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
-    const wsData: any[][] = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']];
+    const wsData: any[][] = [['Tanggal', 'Guru', 'NIP', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']];
 
-    // Sort by guru name alphabetically
-    const sorted = [...data].sort((a, b) => (a.guru_nama || '').localeCompare(b.guru_nama || ''));
+    const grouped = groupExportData();
 
-    sorted.forEach((d) => {
-      wsData.push([d.tanggal, d.guru_nama, d.nama_kelas, d.nama_mapel, d.jumlah_hadir, d.jumlah_izin_sakit, d.jumlah_alfa, d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa), d.materi_pembelajaran || '-', d.jam_ke, d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-', d.nama_status]);
+    grouped.forEach((guru) => {
+      let showGuru = true;
+      guru.dates.forEach((dateGroup) => {
+        let showTanggal = true;
+        dateGroup.entries.forEach((d) => {
+          wsData.push([
+            showTanggal ? dateGroup.tanggal : '',
+            showGuru ? guru.guruNama : '',
+            showGuru ? guru.guruNip : '',
+            d.nama_kelas,
+            d.nama_mapel,
+            d.jumlah_hadir,
+            d.jumlah_izin_sakit,
+            d.jumlah_alfa,
+            d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa),
+            d.materi_pembelajaran || '-',
+            d.jam_ke,
+            d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-',
+            d.nama_status,
+          ]);
+          showGuru = false;
+          showTanggal = false;
+        });
+      });
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-    // Set column widths
     ws['!cols'] = [
-      { wch: 12 }, // Tanggal
-      { wch: 22 }, // Guru
-      { wch: 10 }, // Kelas
-      { wch: 14 }, // Mapel
-      { wch: 7 },  // Hadir
-      { wch: 5 },  // I/S
-      { wch: 5 },  // Alfa
-      { wch: 8 },  // Jumlah
-      { wch: 24 }, // Materi
-      { wch: 7 },  // Jam Ke
-      { wch: 14 }, // Waktu
-      { wch: 10 }, // Status
+      { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 10 }, { wch: 14 },
+      { wch: 7 }, { wch: 5 }, { wch: 5 }, { wch: 8 }, { wch: 24 },
+      { wch: 7 }, { wch: 14 }, { wch: 10 },
     ];
 
-    // Merge cells for Guru column (column B, index 1)
+    // Merge cells for Guru (col B), NIP (col C), and Tanggal (col A)
     const merges: XLSX.Range[] = [];
-    let i = 1; // start after header row
-    while (i < wsData.length) {
-      const guruName = wsData[i][1];
-      let end = i;
-      while (end + 1 < wsData.length && wsData[end + 1][1] === guruName) {
-        end++;
+    let rowIdx = 1;
+    while (rowIdx < wsData.length) {
+      const guruVal = wsData[rowIdx][1];
+      const tanggalVal = wsData[rowIdx][0];
+      if (guruVal !== '') {
+        let guruEnd = rowIdx;
+        while (guruEnd + 1 < wsData.length && wsData[guruEnd + 1][1] === '') guruEnd++;
+        if (guruEnd > rowIdx) {
+          merges.push({ s: { r: rowIdx, c: 1 }, e: { r: guruEnd, c: 1 } });
+          merges.push({ s: { r: rowIdx, c: 2 }, e: { r: guruEnd, c: 2 } });
+        }
       }
-      if (end > i) {
-        merges.push({ s: { r: i, c: 1 }, e: { r: end, c: 1 } });
+      if (tanggalVal !== '') {
+        let tanggalEnd = rowIdx;
+        while (tanggalEnd + 1 < wsData.length && wsData[tanggalEnd + 1][0] === '' && wsData[tanggalEnd + 1][1] === '') tanggalEnd++;
+        if (tanggalEnd > rowIdx) {
+          merges.push({ s: { r: rowIdx, c: 0 }, e: { r: tanggalEnd, c: 0 } });
+        }
       }
-      i = end + 1;
+      rowIdx++;
     }
     ws['!merges'] = merges;
 
