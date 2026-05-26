@@ -229,7 +229,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
 
   // Admin Widgets
   const renderAdminWidgets = () => (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
       <Card className="border-blue-200 dark:border-blue-800 cursor-pointer hover:shadow-md transition-shadow" onClick={() => onNavigate('data-pegawai')}>
         <CardContent className="p-4 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/50">
@@ -274,6 +274,20 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
           <div>
             <p className="text-xs text-muted-foreground">Persetujuan Pending</p>
             <p className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.pendingCount || 0}</p>
+          </div>
+        </CardContent>
+      </Card>
+      <Card
+        className="border-orange-200 dark:border-orange-800 cursor-pointer hover:shadow-md transition-shadow"
+        onClick={() => { setResetOpen(true); setResetSteps([]); setResetResult(null); }}
+      >
+        <CardContent className="p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/50">
+            <Trash2 className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Reset Data</p>
+            <p className="text-sm font-medium text-orange-600 dark:text-orange-400">Hapus Kehadiran & Jadwal</p>
           </div>
         </CardContent>
       </Card>
@@ -796,6 +810,95 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Reset Data Modal - Admin Only */}
+      {role === 'admin' && (
+        <Dialog open={resetOpen} onOpenChange={(open) => { if (!resetLoading) setResetOpen(open); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Trash2 className="h-5 w-5 text-orange-500" />
+                Reset Data
+              </DialogTitle>
+              <DialogDescription className="sr-only">Hapus semua data kehadiran mengajar dan jadwal mengajar</DialogDescription>
+            </DialogHeader>
+
+            {!resetResult ? (
+              <>
+                <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-md p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-sm text-red-700 dark:text-red-400">Perhatian!</p>
+                      <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+                        Tindakan ini akan menghapus <strong>semua data kehadiran mengajar</strong> dan <strong>semua data jadwal mengajar</strong>. 
+                        Tindakan ini <strong>tidak dapat dibatalkan</strong>.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {resetSteps.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    {resetSteps.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        {s.status === 'processing' && <Loader2 className="h-4 w-4 animate-spin text-orange-500 shrink-0" />}
+                        {s.status === 'done' && <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />}
+                        {s.status === 'warning' && <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />}
+                        {s.status === 'error' && <XCircle className="h-4 w-4 text-red-500 shrink-0" />}
+                        <span className={s.status === 'processing' ? 'text-muted-foreground' : ''}>{s.step}</span>
+                        {s.count !== undefined && <span className="text-muted-foreground ml-auto">({s.count})</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button variant="outline" onClick={() => setResetOpen(false)} disabled={resetLoading}>Batal</Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleResetData}
+                    disabled={resetLoading}
+                  >
+                    {resetLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                    {resetLoading ? 'Menghapus...' : 'Ya, Hapus Semua'}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-md p-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-sm text-green-700 dark:text-green-400">Data berhasil direset!</p>
+                      <p className="text-xs text-green-600 dark:text-green-500 mt-1">{resetResult.message}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {resetSteps.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    {resetSteps.map((s, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        {s.status === 'done' && <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />}
+                        {s.status === 'warning' && <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />}
+                        {s.status === 'error' && <XCircle className="h-4 w-4 text-red-500 shrink-0" />}
+                        <span>{s.step}</span>
+                        {s.count !== undefined && <span className="text-muted-foreground ml-auto">({s.count})</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex justify-end mt-4">
+                  <Button onClick={() => setResetOpen(false)}>Tutup</Button>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
