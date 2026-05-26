@@ -395,7 +395,6 @@ export function SiswaPage() {
                   <div className="flex gap-3 mt-1.5 text-xs text-muted-foreground">
                     <span className="text-blue-600">♂ L: {totalLaki}</span>
                     <span className="text-pink-600">♀ P: {totalPerempuan}</span>
-                    <span>Tanpa JK: {data.length - totalLaki - totalPerempuan}</span>
                   </div>
                 </div>
                 <div className="max-h-64 overflow-y-auto">
