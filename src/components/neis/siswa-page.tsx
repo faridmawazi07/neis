@@ -365,13 +365,13 @@ export function SiswaPage() {
   // Compute per-class stats
   const kelasStats = kelasList.map((k: any) => {
     const kelasSiswa = data.filter((s: any) => s.kelas_id === k.id);
-    const laki = kelasSiswa.filter((s: any) => s.jenis_kelamin === 'Laki-laki').length;
-    const perempuan = kelasSiswa.filter((s: any) => s.jenis_kelamin === 'Perempuan').length;
+    const laki = kelasSiswa.filter((s: any) => s.jenis_kelamin?.toLowerCase() === 'laki-laki').length;
+    const perempuan = kelasSiswa.filter((s: any) => s.jenis_kelamin?.toLowerCase() === 'perempuan').length;
     return { ...k, total: kelasSiswa.length, laki, perempuan };
   }).filter((k: any) => k.total > 0).sort((a: any, b: any) => a.nama_kelas.localeCompare(b.nama_kelas));
 
-  const totalLaki = data.filter((s: any) => s.jenis_kelamin === 'Laki-laki').length;
-  const totalPerempuan = data.filter((s: any) => s.jenis_kelamin === 'Perempuan').length;
+  const totalLaki = data.filter((s: any) => s.jenis_kelamin?.toLowerCase() === 'laki-laki').length;
+  const totalPerempuan = data.filter((s: any) => s.jenis_kelamin?.toLowerCase() === 'perempuan').length;
 
   return (
     <div>

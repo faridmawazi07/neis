@@ -128,9 +128,16 @@ export async function POST(req: NextRequest) {
 
         const id = uuidv4();
         try {
+          // Normalize jenis_kelamin casing
+          let normalizedJK = jenis_kelamin;
+          if (normalizedJK && typeof normalizedJK === 'string') {
+            const lower = normalizedJK.toLowerCase();
+            if (lower === 'laki-laki' || lower === 'laki laki') normalizedJK = 'Laki-laki';
+            else if (lower === 'perempuan') normalizedJK = 'Perempuan';
+          }
           await turso.execute({
             sql: 'INSERT INTO siswa (id, nis, nisn, nama, kelas_id, jenis_kelamin) VALUES (?, ?, ?, ?, ?, ?)',
-            args: [id, String(nis), String(nisn), String(nama).trim(), kelas_id, jenis_kelamin || null],
+            args: [id, String(nis), String(nisn), String(nama).trim(), kelas_id, normalizedJK || null],
           });
           results.success.push({ id, nis: String(nis), nisn: String(nisn), nama: String(nama).trim() });
         } catch (err: any) {
@@ -150,7 +157,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Normal create siswa
-    const { nis, nisn, nama, kelas_id, jenis_kelamin } = await req.json();
+    const body = await req.json();
+    let { nis, nisn, nama, kelas_id, jenis_kelamin } = body;
+    // Normalize jenis_kelamin casing
+    if (jenis_kelamin && typeof jenis_kelamin === 'string') {
+      const lower = jenis_kelamin.toLowerCase();
+      if (lower === 'laki-laki' || lower === 'laki laki') jenis_kelamin = 'Laki-laki';
+      else if (lower === 'perempuan') jenis_kelamin = 'Perempuan';
+    }
     if (!nis || !nisn || !nama || !kelas_id) {
       return NextResponse.json({ error: 'NIS, NISN, nama, dan kelas_id wajib diisi' }, { status: 400 });
     }
@@ -271,8 +285,15 @@ export async function PUT(req: NextRequest) {
     }
 
     if (jenis_kelamin !== undefined) {
+      // Normalize jenis_kelamin casing
+      let normalizedJK = jenis_kelamin;
+      if (normalizedJK && typeof normalizedJK === 'string') {
+        const lower = normalizedJK.toLowerCase();
+        if (lower === 'laki-laki' || lower === 'laki laki') normalizedJK = 'Laki-laki';
+        else if (lower === 'perempuan') normalizedJK = 'Perempuan';
+      }
       updates.push('jenis_kelamin = ?');
-      args.push(jenis_kelamin || null);
+      args.push(normalizedJK || null);
     }
 
     if (updates.length === 0) {
