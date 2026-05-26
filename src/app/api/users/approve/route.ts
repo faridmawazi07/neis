@@ -18,8 +18,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'ID pengguna dan role wajib diisi' }, { status: 400 });
     }
 
-    if (!['guru', 'pegawai', 'pimpinan'].includes(role)) {
-      return NextResponse.json({ error: 'Role tidak valid. Harus guru, pegawai, atau pimpinan' }, { status: 400 });
+    if (!['guru', 'pegawai'].includes(role)) {
+      return NextResponse.json({ error: 'Role tidak valid. Harus guru atau pegawai' }, { status: 400 });
     }
 
     // Check if user exists and is pending
