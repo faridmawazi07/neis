@@ -444,7 +444,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
                   <Calendar
                     mode="single"
                     selected={date}
-                    onSelect={(d) => { if (d) { setDate(d); setJamKe(''); } }}
+                    onSelect={(d) => { if (d) { setDate(d); setJamKe(''); setCalendarOpen(false); } }}
                   />
                 </PopoverContent>
               </Popover>
@@ -541,7 +541,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="end">
-                <Calendar mode="single" selected={date} onSelect={(d) => d && setDate(d)} />
+                <Calendar mode="single" selected={date} onSelect={(d) => { if (d) { setDate(d); setJadwalCalendarOpen(false); } }} />
               </PopoverContent>
             </Popover>
             <div className="flex items-center gap-1 text-xs">

@@ -706,7 +706,7 @@ export function HariLiburMaster() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={formTanggal} onSelect={setFormTanggal} />
+                <Calendar mode="single" selected={formTanggal} onSelect={(d) => { if (d) { setFormTanggal(d); setHolidayCalOpen(false); } }} />
               </PopoverContent>
             </Popover>
           </div>

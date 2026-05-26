@@ -442,7 +442,7 @@ export function KehadiranPage() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={tanggalFrom} onSelect={(d) => d && setTanggalFrom(d)} />
+                  <Calendar mode="single" selected={tanggalFrom} onSelect={(d) => { if (d) { setTanggalFrom(d); setFromCalOpen(false); } }} />
                 </PopoverContent>
               </Popover>
               <Popover open={toCalOpen} onOpenChange={setToCalOpen}>
@@ -453,7 +453,7 @@ export function KehadiranPage() {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={tanggalTo} onSelect={(d) => d && setTanggalTo(d)} />
+                  <Calendar mode="single" selected={tanggalTo} onSelect={(d) => { if (d) { setTanggalTo(d); setToCalOpen(false); } }} />
                 </PopoverContent>
               </Popover>
               {!isGuru && (
