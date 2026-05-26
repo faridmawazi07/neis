@@ -20,6 +20,8 @@ import {
   List,
   UserPlus,
   Loader2,
+  Trash2,
+  AlertCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -53,6 +55,12 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   const [jamKe, setJamKe] = useState<string>('');
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [jadwalCalendarOpen, setJadwalCalendarOpen] = useState(false);
+
+  // Reset data
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSteps, setResetSteps] = useState<{ step: string; status: string; count?: number }[]>([]);
+  const [resetResult, setResetResult] = useState<{ message: string; deleted: { kehadiran: number; jadwal: number } } | null>(null);
 
   // Pending approval modal
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
