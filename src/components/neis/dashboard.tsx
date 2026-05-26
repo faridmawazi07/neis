@@ -645,49 +645,31 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
 
       {/* Siswa Card - All Roles */}
       {siswaPerKelas.length > 0 && (
-        <Card className="mb-6 border-ocean/20 dark:border-sky-800">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-5 w-5 text-ocean dark:text-sky-400" />
+        <Card className="mb-4 border-ocean/20 dark:border-sky-800">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold flex items-center gap-1.5">
+                <Users className="h-4 w-4 text-ocean dark:text-sky-400" />
                 Jumlah Siswa
-              </CardTitle>
-              <div className="text-right">
-                <span className="text-2xl font-bold text-ocean dark:text-sky-400">{stats.totalSiswa || 0}</span>
-                <span className="text-sm text-muted-foreground ml-1">siswa</span>
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-blue-600 dark:text-blue-400">♂ {stats.totalLaki || 0}</span>
+                <span className="text-xs text-pink-600 dark:text-pink-400">♀ {stats.totalPerempuan || 0}</span>
+                <span className="text-lg font-bold text-ocean dark:text-sky-400">{stats.totalSiswa || 0}</span>
               </div>
             </div>
-            <div className="flex gap-4 text-sm mt-1">
-              <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                <span className="text-base">♂</span> Laki-laki: <strong>{stats.totalLaki || 0}</strong>
-              </span>
-              <span className="text-pink-600 dark:text-pink-400 flex items-center gap-1">
-                <span className="text-base">♀</span> Perempuan: <strong>{stats.totalPerempuan || 0}</strong>
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Kelas</TableHead>
-                    <TableHead className="text-center">♂ Laki-laki</TableHead>
-                    <TableHead className="text-center">♀ Perempuan</TableHead>
-                    <TableHead className="text-center">Jumlah</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {siswaPerKelas.map((k: any) => (
-                    <TableRow key={k.kelas_id}>
-                      <TableCell className="font-medium">{k.nama_kelas}</TableCell>
-                      <TableCell className="text-center text-blue-600 dark:text-blue-400">{k.laki}</TableCell>
-                      <TableCell className="text-center text-pink-600 dark:text-pink-400">{k.perempuan}</TableCell>
-                      <TableCell className="text-center font-semibold">{k.total}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+              {siswaPerKelas.map((k: any) => (
+                <div key={k.kelas_id} className="rounded-lg bg-accent/50 px-2.5 py-1.5 text-center">
+                  <p className="text-xs font-semibold truncate">{k.nama_kelas}</p>
+                  <p className="text-sm font-bold text-ocean dark:text-sky-400">{k.total}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    <span className="text-blue-600 dark:text-blue-400">♂{k.laki}</span>
+                    <span className="mx-0.5">·</span>
+                    <span className="text-pink-600 dark:text-pink-400">♀{k.perempuan}</span>
+                  </p>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
