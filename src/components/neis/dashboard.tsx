@@ -259,6 +259,20 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   // Pegawai/Pimpinan Widgets
   const renderPegawaiWidgets = () => (
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+      <Card
+        className="border-amber-200 dark:border-amber-800 cursor-pointer hover:shadow-md transition-shadow"
+        onClick={() => setApprovalModalOpen(true)}
+      >
+        <CardContent className="p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+            <UserPlus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Persetujuan Pending</p>
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.pendingCount || 0}</p>
+          </div>
+        </CardContent>
+      </Card>
       <Card className="border-teal-200 dark:border-teal-800">
         <CardContent className="p-4 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/50">
@@ -278,20 +292,6 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
           <div>
             <p className="text-xs text-muted-foreground">Jumlah Guru</p>
             <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.totalGuru || 0}</p>
-          </div>
-        </CardContent>
-      </Card>
-      <Card
-        className="border-amber-200 dark:border-amber-800 cursor-pointer hover:shadow-md transition-shadow"
-        onClick={() => setApprovalModalOpen(true)}
-      >
-        <CardContent className="p-4 flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/50">
-            <UserPlus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Persetujuan Pending</p>
-            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.pendingCount || 0}</p>
           </div>
         </CardContent>
       </Card>
