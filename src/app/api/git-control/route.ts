@@ -300,19 +300,47 @@ async function canPush(gitToken: string, targetBranch: string): Promise<{ allowe
     return { allowed: false, reason: 'GitHub Token belum dikonfigurasi.', behind: 0, ahead: 0 };
   }
 
+  // TRUE sandbox reset = reset detected AND sync marker missing
+  // This means the filesystem was completely wiped — any "changes" are just default files
+  // MUST block push to prevent overwriting GitHub with empty/default code
+  const sandboxReset = isSandboxReset();
+  const syncMarkerPresent = isSyncMarkerPresent();
+
+  if (sandboxReset && !syncMarkerPresent) {
+    console.log('[SandboxProtection] 🚫 TRUE RESET DETECTED — push BLOCKED to protect GitHub');
+    return { allowed: false, reason: 'Sandbox reset terdeteksi! Push diblokir untuk melindungi kode di GitHub. Pull terlebih dahulu.', behind: 0, ahead: 0 };
+  }
+
   // Fetch latest from remote to get accurate ahead/behind
   const { ahead, behind } = await fetchAndGetAheadBehind(gitToken, targetBranch);
 
-  // If local is ahead or has uncommitted changes, ALWAYS allow push
-  // This prevents auto-pull from overwriting local work
+  // If local is ahead of GitHub, allow push — these are real commits
   if (ahead > 0) {
     return { allowed: true, reason: '', behind, ahead };
   }
 
   // Check for uncommitted changes
+  // But if sandbox reset detected (false positive: marker exists but ID changed),
+  // verify these are REAL user changes by checking if the .git history is intact
   try {
     const { stdout } = await execAsync('git status --porcelain', { cwd: PROJECT_DIR });
     if (stdout.trim().length > 0) {
+      if (sandboxReset) {
+        // Sandbox ID changed but marker still exists — likely false positive
+        // Still, verify git history is intact by checking if HEAD commit exists and is old enough
+        try {
+          const { stdout: logStdout } = await execAsync('git log --oneline -1', { cwd: PROJECT_DIR });
+          if (logStdout.trim().length > 0) {
+            // Git history intact — this is likely a false positive, allow push
+            console.log('[SandboxProtection] ⚠️ Sandbox ID changed but git history intact — allowing push (likely false positive)');
+            return { allowed: true, reason: '', behind, ahead };
+          }
+        } catch {
+          // git log failed — no history = true reset scenario
+          console.log('[SandboxProtection] 🚫 No git history found — blocking push');
+          return { allowed: false, reason: 'Sandbox reset terdeteksi! Tidak ada riwayat git. Pull terlebih dahulu.', behind: 0, ahead: 0 };
+        }
+      }
       return { allowed: true, reason: '', behind, ahead };
     }
   } catch {}
@@ -322,8 +350,8 @@ async function canPush(gitToken: string, targetBranch: string): Promise<{ allowe
     return { allowed: false, reason: `Kode lokal tertinggal ${behind} commit dari GitHub. Pull terlebih dahulu.`, behind, ahead };
   }
 
-  // Only block for sandbox issues when there's NOTHING to push
-  if (isSandboxReset() || !isSyncMarkerPresent()) {
+  // Block for sandbox issues when there's nothing to push
+  if (sandboxReset || !syncMarkerPresent) {
     return { allowed: false, reason: 'Sandbox belum sinkron. Ambil kode dari GitHub terlebih dahulu.', behind: 0, ahead: 0 };
   }
 
