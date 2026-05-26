@@ -14,9 +14,10 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePagination } from '@/hooks/use-pagination';
 import { PaginationBar } from '@/components/neis/pagination-bar';
 
@@ -361,15 +362,56 @@ export function SiswaPage() {
     }
   };
 
+  // Compute per-class stats
+  const kelasStats = kelasList.map((k: any) => {
+    const kelasSiswa = data.filter((s: any) => s.kelas_id === k.id);
+    const laki = kelasSiswa.filter((s: any) => s.jenis_kelamin === 'Laki-laki').length;
+    const perempuan = kelasSiswa.filter((s: any) => s.jenis_kelamin === 'Perempuan').length;
+    return { ...k, total: kelasSiswa.length, laki, perempuan };
+  }).filter((k: any) => k.total > 0).sort((a: any, b: any) => a.nama_kelas.localeCompare(b.nama_kelas));
+
+  const totalLaki = data.filter((s: any) => s.jenis_kelamin === 'Laki-laki').length;
+  const totalPerempuan = data.filter((s: any) => s.jenis_kelamin === 'Perempuan').length;
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold">Siswa</h1>
           {!loading && data.length > 0 && (
-            <span className="text-sm bg-ocean/10 text-ocean px-2.5 py-0.5 rounded-full font-medium">
-              {data.length} siswa
-            </span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="text-sm bg-ocean/10 text-ocean px-2.5 py-0.5 rounded-full font-medium hover:bg-ocean/20 transition-colors flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5" />
+                  {data.length} siswa
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0" align="start">
+                <div className="p-3 border-b">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-sm">Jumlah Siswa</span>
+                    <span className="text-sm font-bold text-ocean">{data.length}</span>
+                  </div>
+                  <div className="flex gap-3 mt-1.5 text-xs text-muted-foreground">
+                    <span className="text-blue-600">♂ L: {totalLaki}</span>
+                    <span className="text-pink-600">♀ P: {totalPerempuan}</span>
+                    <span>Tanpa JK: {data.length - totalLaki - totalPerempuan}</span>
+                  </div>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {kelasStats.map((k: any) => (
+                    <div key={k.id} className="flex items-center justify-between px-3 py-2 hover:bg-accent/50 text-sm border-b last:border-b-0">
+                      <span className="font-medium">{k.nama_kelas}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-blue-600">♂ {k.laki}</span>
+                        <span className="text-xs text-pink-600">♀ {k.perempuan}</span>
+                        <span className="font-bold text-ocean min-w-[24px] text-right">{k.total}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
