@@ -221,7 +221,18 @@ async function doPull(gitToken: string, targetBranch: string): Promise<string> {
   try {
     await execAsync(`git remote set-url origin https://${gitToken}@github.com/faridmawazi07/neis.git`, { cwd: PROJECT_DIR });
     await execAsync('git fetch --all', { cwd: PROJECT_DIR, timeout: 120000 });
-    // Stash any uncommitted changes before resetting to prevent data loss
+    
+    // Check if local is ahead of GitHub (has local commits not on GitHub)
+    let localAhead = 0;
+    let localBehind = 0;
+    try {
+      const { stdout } = await execAsync(`git rev-list --left-right --count origin/${targetBranch}...HEAD`, { cwd: PROJECT_DIR });
+      const parts = stdout.trim().split(/\s+/);
+      localBehind = parseInt(parts[0] || '0');
+      localAhead = parseInt(parts[1] || '0');
+    } catch {}
+
+    // Stash any uncommitted changes first
     let hasStash = false;
     try {
       const { stdout } = await execAsync('git status --porcelain', { cwd: PROJECT_DIR });
@@ -231,20 +242,44 @@ async function doPull(gitToken: string, targetBranch: string): Promise<string> {
         console.log('[GitControl] 📦 Stashed uncommitted changes before pull');
       }
     } catch {}
-    await execAsync(`git reset --hard origin/${targetBranch}`, { cwd: PROJECT_DIR });
-    // Restore stashed changes after reset
+
+    if (localAhead > 0) {
+      // Local has commits not on GitHub — use rebase to preserve them
+      console.log(`[GitControl] 🔄 Local is ahead by ${localAhead} commits. Using rebase to preserve local commits...`);
+      try {
+        await execAsync(`git rebase origin/${targetBranch}`, { cwd: PROJECT_DIR });
+        console.log('[GitControl] ✅ Rebase successful — local commits preserved');
+      } catch (rebaseErr: any) {
+        // Rebase conflict — abort and fall back to merge
+        console.error('[GitControl] ⚠️ Rebase failed, aborting:', rebaseErr.message);
+        try { await execAsync('git rebase --abort', { cwd: PROJECT_DIR }); } catch {}
+        try {
+          await execAsync(`git merge origin/${targetBranch} --no-edit`, { cwd: PROJECT_DIR });
+          console.log('[GitControl] ✅ Merge successful — local commits preserved');
+        } catch (mergeErr: any) {
+          // Merge also failed — reset as last resort
+          console.error('[GitControl] ⚠️ Merge also failed, falling back to reset:', mergeErr.message);
+          await execAsync(`git reset --hard origin/${targetBranch}`, { cwd: PROJECT_DIR });
+        }
+      }
+    } else {
+      // No local commits — safe to reset
+      await execAsync(`git reset --hard origin/${targetBranch}`, { cwd: PROJECT_DIR });
+    }
+
+    // Restore stashed changes after pull
     if (hasStash) {
       try {
         await execAsync('git stash pop', { cwd: PROJECT_DIR });
         console.log('[GitControl] 📦 Restored stashed changes after pull');
       } catch (stashErr: any) {
-        // Stash pop can fail on conflicts - log but don't fail the pull
         console.error('[GitControl] ⚠️ Stash pop failed (conflicts?):', stashErr.message);
       }
     }
+
     await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
     markSynced();
-    updateSandboxId(); // Update sandbox ID after successful pull (recovery)
+    updateSandboxId();
     const config = getConfig();
     config.synced = true;
     config.lastPull = new Date().toISOString();
