@@ -28,7 +28,7 @@ function getConfig(): GitHubConfig {
       return JSON.parse(raw);
     }
   } catch {}
-  return { autoPush: true, lastPush: null, lastPull: null, branch: 'main', synced: false, sandboxId: null };
+  return { autoPush: true, lastPush: null, lastPull: null, branch: 'dev', synced: false, sandboxId: null };
 }
 
 function saveConfig(config: GitHubConfig) {
