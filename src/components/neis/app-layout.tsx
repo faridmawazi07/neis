@@ -80,7 +80,7 @@ const menuItems = {
       ],
     },
     { id: 'data-pegawai' as PageName, label: 'Data Pegawai', icon: Users },
-    { id: 'backup-restore' as PageName, label: 'Backup/Restore', icon: HardDrive },
+    { id: 'backup-restore' as PageName, label: 'Backup/Restore/Reset', icon: HardDrive },
     // Git Control hanya tampil di development (lokal), disembunyikan di production (deploy)
     ...(isProduction ? [] : [{ id: 'git-control' as PageName, label: 'Git Control', icon: GitBranch }]),
     { id: 'profile' as PageName, label: 'Profile', icon: User },
