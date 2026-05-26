@@ -209,8 +209,10 @@ async function fetchAndGetAheadBehind(gitToken: string, targetBranch: string): P
     try {
       const { stdout } = await execAsync(`git rev-list --left-right --count origin/${targetBranch}...HEAD`, { cwd: PROJECT_DIR });
       const parts = stdout.trim().split(/\s+/);
-      ahead = parseInt(parts[0] || '0');
-      behind = parseInt(parts[1] || '0');
+      // left = commits in remote not in HEAD = how many we're BEHIND
+      // right = commits in HEAD not in remote = how many we're AHEAD
+      behind = parseInt(parts[0] || '0');
+      ahead = parseInt(parts[1] || '0');
     } catch {}
   }
   
