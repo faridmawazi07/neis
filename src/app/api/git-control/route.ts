@@ -295,26 +295,39 @@ async function doPull(gitToken: string, targetBranch: string): Promise<string> {
  * Check if push is allowed based on sync state.
  * Returns { allowed: boolean, reason: string }
  */
-async function canPush(gitToken: string, targetBranch: string): Promise<{ allowed: boolean; reason: string; behind: number }> {
-  // Check 1: Sync marker must exist
-  if (!isSyncMarkerPresent()) {
-    return { allowed: false, reason: 'Sandbox belum sinkron. Ambil kode dari GitHub terlebih dahulu.', behind: 0 };
+async function canPush(gitToken: string, targetBranch: string): Promise<{ allowed: boolean; reason: string; behind: number; ahead: number }> {
+  if (!gitToken) {
+    return { allowed: false, reason: 'GitHub Token belum dikonfigurasi.', behind: 0, ahead: 0 };
   }
-  
-  // Check 2: Sandbox reset detection
-  if (isSandboxReset()) {
-    return { allowed: false, reason: 'Sandbox reset terdeteksi! Push diblokir untuk melindungi kode di GitHub.', behind: 0 };
+
+  // Fetch latest from remote to get accurate ahead/behind
+  const { ahead, behind } = await fetchAndGetAheadBehind(gitToken, targetBranch);
+
+  // If local is ahead or has uncommitted changes, ALWAYS allow push
+  // This prevents auto-pull from overwriting local work
+  if (ahead > 0) {
+    return { allowed: true, reason: '', behind, ahead };
   }
-  
-  // Check 3: Must not be behind GitHub (would overwrite newer code)
-  if (gitToken) {
-    const { behind } = await fetchAndGetAheadBehind(gitToken, targetBranch);
-    if (behind > 0) {
-      return { allowed: false, reason: `Kode lokal tertinggal ${behind} commit dari GitHub. Pull terlebih dahulu.`, behind };
+
+  // Check for uncommitted changes
+  try {
+    const { stdout } = await execAsync('git status --porcelain', { cwd: PROJECT_DIR });
+    if (stdout.trim().length > 0) {
+      return { allowed: true, reason: '', behind, ahead };
     }
+  } catch {}
+
+  // No local changes - safe to block push if behind or not synced
+  if (behind > 0) {
+    return { allowed: false, reason: `Kode lokal tertinggal ${behind} commit dari GitHub. Pull terlebih dahulu.`, behind, ahead };
   }
-  
-  return { allowed: true, reason: '', behind: 0 };
+
+  // Only block for sandbox issues when there's NOTHING to push
+  if (isSandboxReset() || !isSyncMarkerPresent()) {
+    return { allowed: false, reason: 'Sandbox belum sinkron. Ambil kode dari GitHub terlebih dahulu.', behind: 0, ahead: 0 };
+  }
+
+  return { allowed: true, reason: '', behind, ahead };
 }
 
 async function doPush(gitToken: string, targetBranch: string, commitPrefix: string) {
@@ -338,8 +351,12 @@ async function doPush(gitToken: string, targetBranch: string, commitPrefix: stri
     }
     await execAsync(`git push origin HEAD:${targetBranch}`, { cwd: PROJECT_DIR, timeout: 120000 });
     await execAsync('git remote set-url origin https://github.com/faridmawazi07/neis.git', { cwd: PROJECT_DIR });
+    // Mark synced after successful push to prevent false reset detection
+    markSynced();
+    updateSandboxId();
     const config = getConfig();
     config.lastPush = new Date().toISOString();
+    config.synced = true;
     saveConfig(config);
     return { success: true, message: `Berhasil push ke GitHub (branch: ${targetBranch})`, nothingNew };
   } catch (error: any) {
@@ -489,38 +506,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ synced, sandboxReset, behind, syncMarkerPresent });
     }
 
-    // ===== AUTO-PUSH TRIGGER - Smart: pull if behind, push if ahead =====
+    // ===== AUTO-PUSH TRIGGER - Push first, only pull if nothing to push =====
     if (action === 'auto-push-trigger') {
       const config = getConfig();
       if (!config.autoPush || !gitToken) return NextResponse.json({ skipped: true, message: !config.autoPush ? 'Auto-push dinonaktifkan' : 'Token tidak tersedia' });
       
-      // Check sandbox reset
-      if (isSandboxReset() || !isSyncMarkerPresent()) {
-        console.log('[SandboxProtection] 🚫 Auto-push BLOCKED - sandbox not synced. Triggering auto-pull instead...');
-        try {
-          const message = await doPull(gitToken, config.branch);
-          return NextResponse.json({ blocked: true, autoRecovered: true, message: `Auto-push diblokir, kode dipulihkan dari GitHub: ${message}` });
-        } catch (error: any) {
-          return NextResponse.json({ blocked: true, autoRecovered: false, message: `Auto-push diblokir & auto-pull gagal: ${error.message}` });
-        }
-      }
-      
-      // Check if behind GitHub
-      const { behind } = await fetchAndGetAheadBehind(gitToken, config.branch);
-      if (behind > 0) {
-        console.log(`[SandboxProtection] ⚠️ Behind ${behind} commits. Auto-pulling instead of pushing...`);
-        try {
-          const message = await doPull(gitToken, config.branch);
-          return NextResponse.json({ blocked: true, autoRecovered: true, message: `Kode lokal tertinggal, diperbarui dari GitHub: ${message}` });
-        } catch (error: any) {
-          return NextResponse.json({ blocked: true, autoRecovered: false, message: `Gagal pull: ${error.message}` });
-        }
-      }
-      
-      // All checks passed - safe to push
+      // First: always try to push if there are local changes
+      // This prevents auto-pull from overwriting local work
       try {
         const result = await doPush(gitToken, config.branch, 'chore: auto backup');
-        if (result.blocked) return NextResponse.json({ blocked: true, message: result.message });
+        if (result.blocked) {
+          // Push was blocked - check if we should pull instead
+          // Only pull when there are NO local changes to lose
+          try {
+            const { stdout } = await execAsync('git status --porcelain', { cwd: PROJECT_DIR });
+            const { ahead } = await fetchAndGetAheadBehind(gitToken, config.branch);
+            if (stdout.trim().length === 0 && ahead === 0) {
+              // No local changes - safe to pull
+              console.log('[GitControl] 🔄 No local changes, pulling from GitHub...');
+              const message = await doPull(gitToken, config.branch);
+              return NextResponse.json({ autoRecovered: true, message: `Tidak ada perubahan lokal, kode diperbarui dari GitHub: ${message}` });
+            }
+          } catch {}
+          return NextResponse.json({ blocked: true, message: result.message });
+        }
         if (result.nothingNew) return NextResponse.json({ skipped: true, message: 'Tidak ada perubahan baru' });
         return NextResponse.json({ message: result.message });
       } catch (error: any) { return NextResponse.json({ error: `Auto-push gagal: ${error.message}` }, { status: 500 }); }
