@@ -97,6 +97,15 @@ export async function GET(req: NextRequest) {
       kehadiranBulanIni = Number(monthResult.rows[0].count);
     }
 
+    // Get pending users for pegawai/pimpinan/admin
+    let pendingUsers: any[] = [];
+    if (payload.role === 'admin' || payload.role === 'pegawai' || payload.role === 'pimpinan') {
+      const pendingResult = await turso.execute(
+        `SELECT id, nip, nama, role, foto_profile, jenis_kelamin, created_at FROM users WHERE status_persetujuan = 'pending' ORDER BY created_at ASC`
+      );
+      pendingUsers = pendingResult.rows;
+    }
+
     return NextResponse.json({
       stats: {
         totalGuru: Number(totalGuru.rows[0].count),
@@ -111,6 +120,7 @@ export async function GET(req: NextRequest) {
       holidayInfo: holiday.rows.length > 0 ? holiday.rows[0] : null,
       jadwal: jadwalData,
       kehadiranSiswa,
+      pendingUsers,
     });
   } catch (error) {
     console.error('Dashboard GET error:', error);

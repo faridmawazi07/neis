@@ -18,10 +18,14 @@ import {
   XCircle,
   PartyPopper,
   List,
+  UserPlus,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
 import type { PageName } from './app-layout';
 import { usePagination } from '@/hooks/use-pagination';
 import { PaginationBar } from '@/components/neis/pagination-bar';
@@ -46,6 +50,12 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
     kelas: '',
   });
   const [jadwalFilter, setJadwalFilter] = useState<'all' | 'sudah' | 'belum'>('all');
+
+  // Pending approval modal
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvalRoles, setApprovalRoles] = useState<Record<string, string>>({});
+  const [approvalLoading, setApprovalLoading] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -78,6 +88,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   const holidayInfo = dashboardData?.holidayInfo || null;
   const jadwal = dashboardData?.jadwal || [];
   const kehadiranSiswa = dashboardData?.kehadiranSiswa || [];
+  const pendingUsers = dashboardData?.pendingUsers || [];
   const dayName = dashboardData?.dayName || '';
 
   const showAbsenceModal = (type: string, kelasNama: string, siswaAbsenJson: string) => {
@@ -101,6 +112,68 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(filteredJadwal.length);
 
   useEffect(() => { setCurrentPage(1); }, [jadwalFilter]);
+
+  const handleApprove = async (userId: string) => {
+    const selectedRole = approvalRoles[userId];
+    if (!selectedRole) {
+      toast({ title: 'Error', description: 'Pilih role terlebih dahulu', variant: 'destructive' });
+      return;
+    }
+    setApprovalLoading(userId);
+    try {
+      const res = await fetch('/api/users/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: userId, role: selectedRole }),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: 'Error', description: data.error, variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Berhasil', description: `${data.data?.nama || 'Pengguna'} disetujui sebagai ${selectedRole}` });
+      // Remove from local state
+      setApprovalRoles((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+      fetchDashboard();
+    } catch {
+      toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' });
+    } finally {
+      setApprovalLoading(null);
+    }
+  };
+
+  const handleReject = async (userId: string) => {
+    setApprovalLoading(userId);
+    try {
+      const res = await fetch('/api/users/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: userId }),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: 'Error', description: data.error, variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Ditolak', description: 'Pendaftaran telah ditolak' });
+      setApprovalRoles((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+      fetchDashboard();
+    } catch {
+      toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' });
+    } finally {
+      setApprovalLoading(null);
+    }
+  };
 
   // Admin Widgets
   const renderAdminWidgets = () => (
@@ -185,7 +258,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
 
   // Pegawai/Pimpinan Widgets
   const renderPegawaiWidgets = () => (
-    <div className="grid grid-cols-2 gap-4 mb-6">
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
       <Card className="border-teal-200 dark:border-teal-800">
         <CardContent className="p-4 flex items-center gap-3">
           <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/50">
@@ -205,6 +278,20 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
           <div>
             <p className="text-xs text-muted-foreground">Jumlah Guru</p>
             <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.totalGuru || 0}</p>
+          </div>
+        </CardContent>
+      </Card>
+      <Card
+        className="border-amber-200 dark:border-amber-800 cursor-pointer hover:shadow-md transition-shadow"
+        onClick={() => setApprovalModalOpen(true)}
+      >
+        <CardContent className="p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/50">
+            <UserPlus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Persetujuan Pending</p>
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.pendingCount || 0}</p>
           </div>
         </CardContent>
       </Card>
