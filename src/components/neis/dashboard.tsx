@@ -315,6 +315,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
       const totalAlfa = kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_alfa) || 0), 0);
       const totalSiswa = kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_siswa_total) || 0), 0);
 
+      // Summary table
       autoTable(doc, {
         startY: 28,
         head: [['Kelas', 'Hadir', 'Izin/Sakit', 'Alfa', 'Jumlah']],
@@ -334,14 +335,65 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
           }
         },
       });
+
+      // Detail: names of Izin/Sakit & Alfa students per class
+      const detailRows: string[][] = [];
+      kehadiranSiswa.forEach((k: any) => {
+        let izinSakit: string[] = [];
+        let alfa: string[] = [];
+        try {
+          const parsed = JSON.parse(k.siswa_absen_json || '{}');
+          izinSakit = parsed.izin_sakit || [];
+          alfa = parsed.alfa || [];
+        } catch {}
+        if (izinSakit.length > 0 || alfa.length > 0) {
+          detailRows.push([
+            k.nama_kelas,
+            izinSakit.length > 0 ? izinSakit.join(', ') : '-',
+            alfa.length > 0 ? alfa.join(', ') : '-',
+          ]);
+        }
+      });
+
+      if (detailRows.length > 0) {
+        const finalY = (doc as any).lastAutoTable?.finalY || 60;
+        autoTable(doc, {
+          startY: finalY + 10,
+          head: [['Kelas', 'Izin/Sakit', 'Alfa']],
+          body: detailRows,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [100, 100, 100] },
+          columnStyles: {
+            0: { cellWidth: 30 },
+            1: { cellWidth: 75 },
+            2: { cellWidth: 75 },
+          },
+        });
+      }
+
       doc.save(`kehadiran-siswa-${format(date, 'yyyy-MM-dd')}.pdf`);
     };
 
     const handleExportExcel = async () => {
       const XLSX = await import('xlsx');
-      const wsData = [['Kelas', 'Hadir', 'Izin/Sakit', 'Alfa', 'Jumlah']];
+      const wsData: any[][] = [['Kelas', 'Hadir', 'Izin/Sakit', 'Alfa', 'Jumlah', 'Nama Izin/Sakit', 'Nama Alfa']];
       kehadiranSiswa.forEach((k: any) => {
-        wsData.push([k.nama_kelas, k.jumlah_hadir || 0, k.jumlah_izin_sakit || 0, k.jumlah_alfa || 0, k.jumlah_siswa_total || 0]);
+        let izinSakit: string[] = [];
+        let alfa: string[] = [];
+        try {
+          const parsed = JSON.parse(k.siswa_absen_json || '{}');
+          izinSakit = parsed.izin_sakit || [];
+          alfa = parsed.alfa || [];
+        } catch {}
+        wsData.push([
+          k.nama_kelas,
+          k.jumlah_hadir || 0,
+          k.jumlah_izin_sakit || 0,
+          k.jumlah_alfa || 0,
+          k.jumlah_siswa_total || 0,
+          izinSakit.length > 0 ? izinSakit.join(', ') : '-',
+          alfa.length > 0 ? alfa.join(', ') : '-',
+        ]);
       });
       // Add Jumlah Total row
       wsData.push([
@@ -350,9 +402,21 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
         kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_izin_sakit) || 0), 0),
         kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_alfa) || 0), 0),
         kehadiranSiswa.reduce((sum: number, k: any) => sum + (Number(k.jumlah_siswa_total) || 0), 0),
+        '',
+        '',
       ]);
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.aoa_to_sheet(wsData);
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 12 },  // Kelas
+        { wch: 8 },   // Hadir
+        { wch: 12 },  // Izin/Sakit
+        { wch: 8 },   // Alfa
+        { wch: 8 },   // Jumlah
+        { wch: 40 },  // Nama Izin/Sakit
+        { wch: 40 },  // Nama Alfa
+      ];
       XLSX.utils.book_append_sheet(wb, ws, 'Kehadiran Siswa');
       XLSX.writeFile(wb, `kehadiran-siswa-${format(date, 'yyyy-MM-dd')}.xlsx`);
     };
