@@ -575,6 +575,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
             <DialogTitle>
               {absenceModalData.type === 'izin_sakit' ? 'Izin/Sakit' : 'Alfa'} - {absenceModalData.kelas}
             </DialogTitle>
+            <DialogDescription className="sr-only">Daftar siswa {absenceModalData.type}</DialogDescription>
           </DialogHeader>
           {absenceModalData.students.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada data siswa</p>
@@ -586,6 +587,79 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
                 </li>
               ))}
             </ul>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Pending Approval Modal */}
+      <Dialog open={approvalModalOpen} onOpenChange={setApprovalModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-amber-500" />
+              Persetujuan Pendaftar
+            </DialogTitle>
+            <DialogDescription className="sr-only">Setujui atau tolak pendaftar baru dan tentukan role-nya</DialogDescription>
+          </DialogHeader>
+          {pendingUsers.length === 0 ? (
+            <div className="text-center py-8">
+              <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Tidak ada pendaftar yang menunggu persetujuan</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {pendingUsers.map((u: any) => (
+                <div
+                  key={u.id}
+                  className="border rounded-lg p-3 space-y-2"
+                >
+                  <div className="flex items-center gap-3">
+                    {u.foto_profile ? (
+                      <img src={u.foto_profile} alt={u.nama} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-medium text-muted-foreground shrink-0">
+                        {(u.nama || '?')[0]?.toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{u.nama}</p>
+                      <p className="text-xs text-muted-foreground">NIP: {u.nip || '-'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={approvalRoles[u.id] || ''}
+                      onValueChange={(val) => setApprovalRoles((prev) => ({ ...prev, [u.id]: val }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs flex-1">
+                        <SelectValue placeholder="Pilih Role" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="guru">Guru</SelectItem>
+                        <SelectItem value="pegawai">Pegawai</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs bg-green-600 hover:bg-green-700 text-white"
+                      disabled={!approvalRoles[u.id] || approvalLoading === u.id}
+                      onClick={() => handleApprove(u.id)}
+                    >
+                      {approvalLoading === u.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Setujui'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-8 text-xs"
+                      disabled={approvalLoading === u.id}
+                      onClick={() => handleReject(u.id)}
+                    >
+                      Tolak
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </DialogContent>
       </Dialog>
