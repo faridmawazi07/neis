@@ -189,6 +189,44 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
     }
   };
 
+  const handleResetData = async () => {
+    setResetLoading(true);
+    setResetSteps([]);
+    setResetResult(null);
+
+    // Simulate step-by-step progress
+    const progressSteps = [
+      { step: 'Menghubungi server...', status: 'processing' },
+    ];
+    setResetSteps([...progressSteps]);
+
+    try {
+      const res = await fetch('/api/reset-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'RESET_ALL_DATA' }),
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast({ title: 'Gagal', description: data.error, variant: 'destructive' });
+        setResetSteps([{ step: data.error || 'Gagal mereset data', status: 'error' }]);
+        return;
+      }
+
+      setResetSteps(data.steps || []);
+      setResetResult({ message: data.message, deleted: data.deleted });
+      toast({ title: 'Berhasil', description: data.message });
+      fetchDashboard();
+    } catch {
+      toast({ title: 'Error', description: 'Terjadi kesalahan koneksi', variant: 'destructive' });
+      setResetSteps([{ step: 'Koneksi gagal', status: 'error' }]);
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   // Admin Widgets
   const renderAdminWidgets = () => (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
