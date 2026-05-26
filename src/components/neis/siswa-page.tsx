@@ -14,7 +14,7 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { usePagination } from '@/hooks/use-pagination';
@@ -63,6 +63,7 @@ export function SiswaPage() {
   const [importFailed, setImportFailed] = useState(0);
   const [importErrors, setImportErrors] = useState<any[]>([]);
   const [importDone, setImportDone] = useState(false);
+  const [importSteps, setImportSteps] = useState<{ step: string; status: 'processing' | 'done' | 'warning' | 'error'; detail?: string }[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -219,6 +220,7 @@ export function SiswaPage() {
     setImportFailed(0);
     setImportErrors([]);
     setImportDone(false);
+    setImportSteps([{ step: 'Membaca file Excel...', status: 'processing' }]);
 
     try {
       const XLSX = await import('xlsx');
@@ -226,6 +228,9 @@ export function SiswaPage() {
       const wb = XLSX.read(buffer);
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+      setImportSteps(prev => [...prev, { step: 'Membaca file Excel...', status: 'done', detail: `${rows.length - 1} baris data` }]);
+      setImportSteps(prev => [...prev, { step: 'Memvalidasi data...', status: 'processing' }]);
 
       // Parse rows, skip header
       const items: any[] = [];
@@ -249,11 +254,18 @@ export function SiswaPage() {
 
       setImportTotal(items.length);
 
+      if (skippedRows.length > 0) {
+        setImportSteps(prev => [...prev, { step: 'Memvalidasi data...', status: 'warning', detail: `${skippedRows.length} baris dilewati` }]);
+      } else {
+        setImportSteps(prev => [...prev, { step: 'Memvalidasi data...', status: 'done', detail: `${items.length} data valid` }]);
+      }
+
       if (items.length === 0) {
         setImporting(false);
         setImportDone(true);
         setImportErrors(skippedRows);
         setImportFailed(skippedRows.length);
+        setImportSteps(prev => [...prev, { step: 'Import selesai', status: 'error', detail: 'Tidak ada data valid' }]);
         toast({ title: 'Import Gagal', description: 'Tidak ada data valid untuk diimpor', variant: 'destructive' });
         e.target.value = '';
         return;
@@ -261,13 +273,18 @@ export function SiswaPage() {
 
       // Send in batches of 50 for better UX with progress updates
       const BATCH_SIZE = 50;
+      const totalBatches = Math.ceil(items.length / BATCH_SIZE);
       let totalSuccess = 0;
       let totalDuplicates = 0;
       let totalFailed = skippedRows.length;
       const allErrors = [...skippedRows];
 
       for (let batch = 0; batch < items.length; batch += BATCH_SIZE) {
+        const batchNum = Math.floor(batch / BATCH_SIZE) + 1;
         const batchItems = items.slice(batch, batch + BATCH_SIZE);
+
+        setImportSteps(prev => [...prev, { step: `Mengimpor batch ${batchNum}/${totalBatches}...`, status: 'processing', detail: `${batchItems.length} data` }]);
+
         const res = await fetch('/api/siswa?action=bulk-import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -288,6 +305,10 @@ export function SiswaPage() {
           setImportDuplicates(totalDuplicates);
           setImportFailed(totalFailed);
 
+          const batchStatus = (result.failedCount > 0 || result.duplicateCount > 0) ? 'warning' : 'done';
+          const batchDetail = `✓${result.successCount || 0} dup:${result.duplicateCount || 0} gagal:${result.failedCount || 0}`;
+          setImportSteps(prev => [...prev, { step: `Batch ${batchNum}/${totalBatches}`, status: batchStatus, detail: batchDetail }]);
+
           if (result.duplicates?.length > 0) {
             allErrors.push(...result.duplicates.map((d: any) => ({ ...d, type: 'duplikat' })));
           }
@@ -298,17 +319,33 @@ export function SiswaPage() {
         } else {
           totalFailed += batchItems.length;
           setImportFailed(totalFailed);
+          setImportSteps(prev => [...prev, { step: `Batch ${batchNum}/${totalBatches}`, status: 'error', detail: 'Gagal diproses' }]);
           allErrors.push({ error: `Batch gagal diproses (baris ${batch + 1}-${processed})`, type: 'gagal' });
           setImportErrors(allErrors);
         }
       }
 
+      const finalStatus = totalFailed > 0 ? 'warning' : 'done';
+      const finalDetail = `${totalSuccess} berhasil, ${totalDuplicates} duplikat, ${totalFailed} gagal`;
+      setImportSteps(prev => [...prev, { step: 'Import selesai', status: finalStatus, detail: finalDetail }]);
       setImportDone(true);
+      setImporting(false);
       setImportProgress(100);
       fetchData();
+
+      // Show toast on completion
+      if (totalFailed === 0 && totalDuplicates === 0) {
+        toast({ title: 'Import Berhasil', description: `${totalSuccess} data siswa berhasil diimpor` });
+      } else if (totalSuccess > 0) {
+        toast({ title: 'Import Selesai', description: `${totalSuccess} berhasil, ${totalDuplicates} duplikat, ${totalFailed} gagal`, variant: 'destructive' });
+      } else {
+        toast({ title: 'Import Gagal', description: 'Semua data gagal diimpor', variant: 'destructive' });
+      }
     } catch {
       toast({ title: 'Error', description: 'Gagal membaca file Excel', variant: 'destructive' });
+      setImportSteps(prev => [...prev, { step: 'Gagal membaca file', status: 'error' }]);
       setImporting(false);
+      setImportDone(true);
     }
     e.target.value = '';
   };
@@ -457,7 +494,7 @@ export function SiswaPage() {
       </AlertDialogContent></AlertDialog>
 
       {/* Import Progress Dialog */}
-      <Dialog open={importing || importDone} onOpenChange={(open) => { if (!open && importDone) { setImportDone(false); setImporting(false); } }}>
+      <Dialog open={importing || importDone} onOpenChange={(open) => { if (!open && importDone) { setImportDone(false); setImporting(false); setImportSteps([]); } }}>
         <DialogContent className="max-w-md" onPointerDownOutside={(e) => { if (importing && !importDone) e.preventDefault(); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -466,73 +503,80 @@ export function SiswaPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {!importDone ? (
-              <>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Memproses {importProcessed} dari {importTotal} data</span>
-                    <span>{importProgress}%</span>
-                  </div>
-                  <Progress value={importProgress} className="h-3" />
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="text-center p-2 bg-green-50 dark:bg-green-950 rounded-lg">
-                    <div className="text-lg font-bold text-green-600">{importSuccess}</div>
-                    <div className="text-xs text-green-600">Berhasil</div>
-                  </div>
-                  <div className="text-center p-2 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
-                    <div className="text-lg font-bold text-yellow-600">{importDuplicates}</div>
-                    <div className="text-xs text-yellow-600">Duplikat</div>
-                  </div>
-                  <div className="text-center p-2 bg-red-50 dark:bg-red-950 rounded-lg">
-                    <div className="text-lg font-bold text-red-600">{importFailed}</div>
-                    <div className="text-xs text-red-600">Gagal</div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="text-center p-3 bg-green-50 dark:bg-green-950 rounded-lg">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto mb-1" />
-                    <div className="text-xl font-bold text-green-600">{importSuccess}</div>
-                    <div className="text-xs text-green-600">Berhasil</div>
-                  </div>
-                  <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
-                    <AlertTriangle className="h-5 w-5 text-yellow-600 mx-auto mb-1" />
-                    <div className="text-xl font-bold text-yellow-600">{importDuplicates}</div>
-                    <div className="text-xs text-yellow-600">Duplikat</div>
-                  </div>
-                  <div className="text-center p-3 bg-red-50 dark:bg-red-950 rounded-lg">
-                    <XCircle className="h-5 w-5 text-red-600 mx-auto mb-1" />
-                    <div className="text-xl font-bold text-red-600">{importFailed}</div>
-                    <div className="text-xs text-red-600">Gagal</div>
-                  </div>
-                </div>
-                <div className="text-center">
-                  <span className="text-sm text-muted-foreground">Total: {importTotal} data diproses</span>
-                </div>
-                {importErrors.length > 0 && (
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Detail Error:</p>
-                    <div className="max-h-32 overflow-y-auto text-xs space-y-1 pr-1">
-                      {importErrors.slice(0, 20).map((err: any, idx: number) => (
-                        <div key={idx} className={`p-1.5 rounded ${err.type === 'duplikat' ? 'bg-yellow-50 dark:bg-yellow-950 text-yellow-700' : 'bg-red-50 dark:bg-red-950 text-red-700'}`}>
-                          {err.row ? `Baris ${err.row}: ` : ''}{err.nis ? `${err.nis} - ` : ''}{err.error}
-                        </div>
-                      ))}
-                      {importErrors.length > 20 && (
-                        <p className="text-muted-foreground">...dan {importErrors.length - 20} error lainnya</p>
-                      )}
+            {/* Step-by-step progress */}
+            {importSteps.length > 0 && (
+              <div className="space-y-1.5">
+                {importSteps.map((s, i) => (
+                  <div key={i} className="flex items-start gap-2 text-sm">
+                    {s.status === 'processing' && <Loader2 className="h-4 w-4 animate-spin text-ocean shrink-0 mt-0.5" />}
+                    {s.status === 'done' && <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />}
+                    {s.status === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />}
+                    {s.status === 'error' && <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />}
+                    <div className="flex-1 min-w-0">
+                      <span className={s.status === 'processing' ? 'text-muted-foreground' : ''}>{s.step}</span>
+                      {s.detail && <span className="text-muted-foreground ml-1">({s.detail})</span>}
                     </div>
                   </div>
-                )}
-              </>
+                ))}
+              </div>
+            )}
+
+            {/* Progress bar - only show during import */}
+            {!importDone && importTotal > 0 && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Memproses {importProcessed} dari {importTotal} data</span>
+                  <span>{importProgress}%</span>
+                </div>
+                <Progress value={importProgress} className="h-3" />
+              </div>
+            )}
+
+            {/* Stats cards */}
+            <div className={`grid grid-cols-3 gap-3 ${importDone ? '' : ''}`}>
+              <div className={`text-center ${importDone ? 'p-3' : 'p-2'} bg-green-50 dark:bg-green-950 rounded-lg`}>
+                {importDone && <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto mb-1" />}
+                <div className={`${importDone ? 'text-xl' : 'text-lg'} font-bold text-green-600`}>{importSuccess}</div>
+                <div className="text-xs text-green-600">Berhasil</div>
+              </div>
+              <div className={`text-center ${importDone ? 'p-3' : 'p-2'} bg-yellow-50 dark:bg-yellow-950 rounded-lg`}>
+                {importDone && <AlertTriangle className="h-5 w-5 text-yellow-600 mx-auto mb-1" />}
+                <div className={`${importDone ? 'text-xl' : 'text-lg'} font-bold text-yellow-600`}>{importDuplicates}</div>
+                <div className="text-xs text-yellow-600">Duplikat</div>
+              </div>
+              <div className={`text-center ${importDone ? 'p-3' : 'p-2'} bg-red-50 dark:bg-red-950 rounded-lg`}>
+                {importDone && <XCircle className="h-5 w-5 text-red-600 mx-auto mb-1" />}
+                <div className={`${importDone ? 'text-xl' : 'text-lg'} font-bold text-red-600`}>{importFailed}</div>
+                <div className="text-xs text-red-600">Gagal</div>
+              </div>
+            </div>
+
+            {importDone && importTotal > 0 && (
+              <div className="text-center">
+                <span className="text-sm text-muted-foreground">Total: {importTotal} data diproses</span>
+              </div>
+            )}
+
+            {/* Error details */}
+            {importDone && importErrors.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Detail Error:</p>
+                <div className="max-h-32 overflow-y-auto text-xs space-y-1 pr-1">
+                  {importErrors.slice(0, 20).map((err: any, idx: number) => (
+                    <div key={idx} className={`p-1.5 rounded ${err.type === 'duplikat' ? 'bg-yellow-50 dark:bg-yellow-950 text-yellow-700' : 'bg-red-50 dark:bg-red-950 text-red-700'}`}>
+                      {err.row ? `Baris ${err.row}: ` : ''}{err.nis ? `${err.nis} - ` : ''}{err.error}
+                    </div>
+                  ))}
+                  {importErrors.length > 20 && (
+                    <p className="text-muted-foreground">...dan {importErrors.length - 20} error lainnya</p>
+                  )}
+                </div>
+              </div>
             )}
           </div>
           {importDone && (
             <DialogFooter>
-              <Button onClick={() => { setImportDone(false); setImporting(false); }} className="bg-ocean hover:bg-ocean-dark text-white">
+              <Button onClick={() => { setImportDone(false); setImporting(false); setImportSteps([]); }} className="bg-ocean hover:bg-ocean-dark text-white">
                 Tutup
               </Button>
             </DialogFooter>
