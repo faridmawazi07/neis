@@ -78,7 +78,11 @@ export function GitControlPage() {
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const handlePush = async () => {
-    if (!status.synced) { toast({ title: 'Push Diblokir', description: 'Sandbox belum sinkron. Ambil kode dari GitHub terlebih dahulu.', variant: 'destructive' }); return; }
+    // Allow push when there are local changes (ahead or uncommitted), even if not synced
+    if (!status.synced && status.ahead === 0 && !status.hasUncommittedChanges) {
+      toast({ title: 'Push Diblokir', description: 'Tidak ada perubahan lokal untuk di-push. Pull dari GitHub terlebih dahulu.', variant: 'destructive' });
+      return;
+    }
     setPushing(true);
     try {
       const res = await fetch('/api/git-control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'push' }), credentials: 'include' });
@@ -313,16 +317,16 @@ export function GitControlPage() {
 
       {/* ====== Push & Pull ====== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
-        <Card className={!status.synced ? 'opacity-60' : ''}>
+        <Card className={!status.synced && status.ahead === 0 && !status.hasUncommittedChanges ? 'opacity-60' : ''}>
           <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><Upload className="h-5 w-5 text-ocean" /> Simpan ke GitHub</CardTitle></CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">Push kode terbaru ke branch <strong>{status.branch}</strong>.</p>
-            <Button onClick={handlePush} disabled={pushing || !status.connected || !status.synced} className="w-full bg-ocean hover:bg-ocean-dark text-white">
+            <Button onClick={handlePush} disabled={pushing || !status.connected || (!status.synced && status.ahead === 0 && !status.hasUncommittedChanges)} className="w-full bg-ocean hover:bg-ocean-dark text-white">
               {pushing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
               {pushing ? 'Menyimpan...' : 'Simpan ke GitHub'}
             </Button>
             {!status.connected && <p className="text-xs text-destructive mt-2">GitHub Token belum dikonfigurasi</p>}
-            {status.connected && !status.synced && <p className="text-xs text-red-500 mt-2 flex items-center gap-1"><ShieldAlert className="h-3 w-3" /> Diblokir - Sinkronkan dulu</p>}
+            {status.connected && !status.synced && status.ahead === 0 && !status.hasUncommittedChanges && <p className="text-xs text-red-500 mt-2 flex items-center gap-1"><ShieldAlert className="h-3 w-3" /> Diblokir - Tidak ada perubahan lokal</p>}
           </CardContent>
         </Card>
         <Card className={status.needsPull && status.connected ? 'ring-2 ring-orange-300' : ''}>
