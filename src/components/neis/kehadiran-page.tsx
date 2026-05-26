@@ -234,12 +234,20 @@ export function KehadiranPage() {
     doc.text('Kehadiran Mengajar', 14, 15);
     doc.setFontSize(10);
     doc.text(`Periode: ${format(tanggalFrom, 'dd MMM yyyy')} - ${format(tanggalTo, 'dd MMM yyyy')}`, 14, 22);
-    autoTable(doc, {
-      startY: 28,
-      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']],
-      body: data.map((d) => [
+
+    // Sort by guru name alphabetically
+    const sorted = [...data].sort((a, b) => (a.guru_nama || '').localeCompare(b.guru_nama || ''));
+
+    // Build body with rowSpan for guru column
+    const body: any[] = [];
+    sorted.forEach((d, i) => {
+      // Count how many rows this guru has
+      const sameGuruRows = sorted.filter((r) => r.guru_nama === d.guru_nama);
+      const isFirstOfGroup = i === 0 || sorted[i - 1].guru_nama !== d.guru_nama;
+
+      const row: any[] = [
         d.tanggal,
-        d.guru_nama,
+        { content: d.guru_nama, rowSpan: isFirstOfGroup ? sameGuruRows.length : undefined },
         d.nama_kelas,
         d.nama_mapel,
         d.jumlah_hadir,
@@ -250,19 +258,69 @@ export function KehadiranPage() {
         d.jam_ke,
         d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-',
         d.nama_status,
-      ]),
+      ];
+      body.push(row);
+    });
+
+    autoTable(doc, {
+      startY: 28,
+      head: [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']],
+      body,
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fontSize: 7, fillColor: [59, 130, 246] },
+      columnStyles: {
+        1: { cellWidth: 28, fontStyle: 'bold' },
+      },
     });
     doc.save('kehadiran-mengajar.pdf');
   };
 
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
-    const wsData = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']];
-    data.forEach((d) => {
+    const wsData: any[][] = [['Tanggal', 'Guru', 'Kelas', 'Mapel', 'Hadir', 'I/S', 'Alfa', 'Jumlah', 'Materi', 'Jam Ke', 'Waktu', 'Status']];
+
+    // Sort by guru name alphabetically
+    const sorted = [...data].sort((a, b) => (a.guru_nama || '').localeCompare(b.guru_nama || ''));
+
+    sorted.forEach((d) => {
       wsData.push([d.tanggal, d.guru_nama, d.nama_kelas, d.nama_mapel, d.jumlah_hadir, d.jumlah_izin_sakit, d.jumlah_alfa, d.jumlah_siswa_total || (d.jumlah_hadir + d.jumlah_izin_sakit + d.jumlah_alfa), d.materi_pembelajaran || '-', d.jam_ke, d.jam_mulai && d.jam_selesai ? `${d.jam_mulai} - ${d.jam_selesai}` : '-', d.nama_status]);
     });
+
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 12 }, // Tanggal
+      { wch: 22 }, // Guru
+      { wch: 10 }, // Kelas
+      { wch: 14 }, // Mapel
+      { wch: 7 },  // Hadir
+      { wch: 5 },  // I/S
+      { wch: 5 },  // Alfa
+      { wch: 8 },  // Jumlah
+      { wch: 24 }, // Materi
+      { wch: 7 },  // Jam Ke
+      { wch: 14 }, // Waktu
+      { wch: 10 }, // Status
+    ];
+
+    // Merge cells for Guru column (column B, index 1)
+    const merges: XLSX.Range[] = [];
+    let i = 1; // start after header row
+    while (i < wsData.length) {
+      const guruName = wsData[i][1];
+      let end = i;
+      while (end + 1 < wsData.length && wsData[end + 1][1] === guruName) {
+        end++;
+      }
+      if (end > i) {
+        merges.push({ s: { r: i, c: 1 }, e: { r: end, c: 1 } });
+      }
+      i = end + 1;
+    }
+    ws['!merges'] = merges;
+
     XLSX.utils.book_append_sheet(wb, ws, 'Kehadiran');
     XLSX.writeFile(wb, 'kehadiran-mengajar.xlsx');
   };
