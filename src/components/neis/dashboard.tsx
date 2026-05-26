@@ -661,13 +661,19 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
           {absenceModalData.students.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">Tidak ada data siswa</p>
           ) : (
-            <ul className="space-y-1 max-h-64 overflow-y-auto">
-              {absenceModalData.students.map((s: any, i: number) => (
-                <li key={i} className="text-sm p-2 rounded bg-accent/50">
-                  {s.nama}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-1 max-h-64 overflow-y-auto">
+                {absenceModalData.students.map((s: any, i: number) => (
+                  <li key={i} className="text-sm p-2 rounded bg-accent/50">
+                    {s.nama}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center justify-between pt-3 mt-3 border-t">
+                <span className="text-sm font-medium text-muted-foreground">Jumlah</span>
+                <span className="text-sm font-bold">{absenceModalData.students.length} siswa</span>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
