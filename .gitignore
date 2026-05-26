@@ -56,3 +56,5 @@ server.log
 upload/
 .neis-last-push-commit
 .github-config.json
+.neis-sync/
+worklog.md
