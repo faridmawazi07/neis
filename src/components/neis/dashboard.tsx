@@ -50,6 +50,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
     kelas: '',
   });
   const [jadwalFilter, setJadwalFilter] = useState<'all' | 'sudah' | 'belum'>('all');
+  const [jamKe, setJamKe] = useState<string>('');
 
   // Pending approval modal
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
@@ -61,7 +62,9 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
     setLoading(true);
     try {
       const tanggal = format(date, 'yyyy-MM-dd');
-      const res = await fetch(`/api/dashboard?tanggal=${tanggal}`, { credentials: 'include' });
+      let url = `/api/dashboard?tanggal=${tanggal}`;
+      if (jamKe) url += `&jam_ke=${jamKe}`;
+      const res = await fetch(url, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setDashboardData(data);
@@ -71,7 +74,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
     } finally {
       setLoading(false);
     }
-  }, [date]);
+  }, [date, jamKe]);
 
   useEffect(() => {
     fetchDashboard();
@@ -88,6 +91,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   const holidayInfo = dashboardData?.holidayInfo || null;
   const jadwal = dashboardData?.jadwal || [];
   const kehadiranSiswa = dashboardData?.kehadiranSiswa || [];
+  const jamKeOptions = dashboardData?.jamKeOptions || [];
   const pendingUsers = dashboardData?.pendingUsers || [];
   const dayName = dashboardData?.dayName || '';
 
@@ -426,7 +430,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <CardTitle className="text-base">Kehadiran Siswa</CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1">
@@ -438,10 +442,21 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
                   <Calendar
                     mode="single"
                     selected={date}
-                    onSelect={(d) => d && setDate(d)}
+                    onSelect={(d) => { if (d) { setDate(d); setJamKe(''); } }}
                   />
                 </PopoverContent>
               </Popover>
+              <Select value={jamKe} onValueChange={(v) => setJamKe(v === 'all' ? '' : v)}>
+                <SelectTrigger className="w-[110px] h-9">
+                  <SelectValue placeholder="Semua Jam" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Jam</SelectItem>
+                  {jamKeOptions.map((jk: string) => (
+                    <SelectItem key={jk} value={jk}>Jam ke-{jk}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {canExport && (
                 <div className="flex gap-1">
                   <Button variant="outline" size="sm" onClick={handleExportPDF}>PDF</Button>

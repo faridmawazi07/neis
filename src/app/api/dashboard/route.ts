@@ -68,23 +68,53 @@ export async function GET(req: NextRequest) {
       jadwalData = jadwalResult.rows;
     }
 
-    // Get kehadiran siswa aggregation for the day
+    // Get available jam_ke options for the day (from kehadiran_mengajar)
+    let jamKeOptions: string[] = [];
+    const jamKeResult = await turso.execute({
+      sql: `SELECT DISTINCT j.jam_ke FROM kehadiran_mengajar km
+        LEFT JOIN jadwal j ON km.jadwal_id = j.id
+        WHERE km.tanggal = ?
+        ORDER BY j.jam_ke ASC`,
+      args: [tanggal],
+    });
+    jamKeOptions = jamKeResult.rows.map((r: any) => String(r.jam_ke));
+
+    // Get kehadiran siswa for the day, filtered by jam_ke if specified
+    const jamKeParam = searchParams.get('jam_ke') || '';
     let kehadiranSiswa: any[] = [];
-    const kehadiranSiswaSql = `SELECT 
-      j.kelas_id, k.nama_kelas,
-      MAX(km.jumlah_hadir) as jumlah_hadir,
-      MAX(km.jumlah_izin_sakit) as jumlah_izin_sakit,
-      MAX(km.jumlah_alfa) as jumlah_alfa,
-      MAX(km.jumlah_siswa_total) as jumlah_siswa_total,
-      MAX(km.siswa_absen_json) as siswa_absen_json
-      FROM kehadiran_mengajar km
-      LEFT JOIN jadwal j ON km.jadwal_id = j.id
-      LEFT JOIN kelas k ON j.kelas_id = k.id
-      WHERE km.tanggal = ?
-      GROUP BY j.kelas_id
-      ORDER BY k.nama_kelas ASC`;
-    const kehadiranSiswaResult = await turso.execute({ sql: kehadiranSiswaSql, args: [tanggal] });
-    kehadiranSiswa = kehadiranSiswaResult.rows;
+    if (jamKeParam) {
+      // Filter by specific jam_ke — no need for MAX, each kelas has one record per jam_ke
+      const kehadiranSiswaResult = await turso.execute({
+        sql: `SELECT j.kelas_id, k.nama_kelas,
+          km.jumlah_hadir, km.jumlah_izin_sakit, km.jumlah_alfa,
+          km.jumlah_siswa_total, km.siswa_absen_json
+          FROM kehadiran_mengajar km
+          LEFT JOIN jadwal j ON km.jadwal_id = j.id
+          LEFT JOIN kelas k ON j.kelas_id = k.id
+          WHERE km.tanggal = ? AND j.jam_ke = ?
+          ORDER BY k.nama_kelas ASC`,
+        args: [tanggal, jamKeParam],
+      });
+      kehadiranSiswa = kehadiranSiswaResult.rows;
+    } else {
+      // No jam_ke filter — show all, aggregate by kelas using MAX (fallback)
+      const kehadiranSiswaResult = await turso.execute({
+        sql: `SELECT j.kelas_id, k.nama_kelas,
+          MAX(km.jumlah_hadir) as jumlah_hadir,
+          MAX(km.jumlah_izin_sakit) as jumlah_izin_sakit,
+          MAX(km.jumlah_alfa) as jumlah_alfa,
+          MAX(km.jumlah_siswa_total) as jumlah_siswa_total,
+          MAX(km.siswa_absen_json) as siswa_absen_json
+          FROM kehadiran_mengajar km
+          LEFT JOIN jadwal j ON km.jadwal_id = j.id
+          LEFT JOIN kelas k ON j.kelas_id = k.id
+          WHERE km.tanggal = ?
+          GROUP BY j.kelas_id
+          ORDER BY k.nama_kelas ASC`,
+        args: [tanggal],
+      });
+      kehadiranSiswa = kehadiranSiswaResult.rows;
+    }
 
     // Monthly attendance count for guru
     let kehadiranBulanIni = 0;
@@ -120,6 +150,7 @@ export async function GET(req: NextRequest) {
       holidayInfo: holiday.rows.length > 0 ? holiday.rows[0] : null,
       jadwal: jadwalData,
       kehadiranSiswa,
+      jamKeOptions,
       pendingUsers,
     });
   } catch (error) {
