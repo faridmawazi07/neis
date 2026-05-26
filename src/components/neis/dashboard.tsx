@@ -96,6 +96,7 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   const jamKeOptions = dashboardData?.jamKeOptions || [];
   const pendingUsers = dashboardData?.pendingUsers || [];
   const dayName = dashboardData?.dayName || '';
+  const siswaPerKelas = dashboardData?.siswaPerKelas || [];
 
   const showAbsenceModal = (type: string, kelasNama: string, siswaAbsenJson: string) => {
     try {
@@ -641,6 +642,56 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   return (
     <div>
       <h1 className="text-xl font-bold mb-4">Dashboard</h1>
+
+      {/* Siswa Card - All Roles */}
+      {siswaPerKelas.length > 0 && (
+        <Card className="mb-6 border-ocean/20 dark:border-sky-800">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-5 w-5 text-ocean dark:text-sky-400" />
+                Jumlah Siswa
+              </CardTitle>
+              <div className="text-right">
+                <span className="text-2xl font-bold text-ocean dark:text-sky-400">{stats.totalSiswa || 0}</span>
+                <span className="text-sm text-muted-foreground ml-1">siswa</span>
+              </div>
+            </div>
+            <div className="flex gap-4 text-sm mt-1">
+              <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                <span className="text-base">♂</span> Laki-laki: <strong>{stats.totalLaki || 0}</strong>
+              </span>
+              <span className="text-pink-600 dark:text-pink-400 flex items-center gap-1">
+                <span className="text-base">♀</span> Perempuan: <strong>{stats.totalPerempuan || 0}</strong>
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Kelas</TableHead>
+                    <TableHead className="text-center">♂ Laki-laki</TableHead>
+                    <TableHead className="text-center">♀ Perempuan</TableHead>
+                    <TableHead className="text-center">Jumlah</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {siswaPerKelas.map((k: any) => (
+                    <TableRow key={k.kelas_id}>
+                      <TableCell className="font-medium">{k.nama_kelas}</TableCell>
+                      <TableCell className="text-center text-blue-600 dark:text-blue-400">{k.laki}</TableCell>
+                      <TableCell className="text-center text-pink-600 dark:text-pink-400">{k.perempuan}</TableCell>
+                      <TableCell className="text-center font-semibold">{k.total}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {role === 'admin' && renderAdminWidgets()}
       {role === 'guru' && renderGuruWidgets()}

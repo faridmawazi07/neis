@@ -136,6 +136,23 @@ export async function GET(req: NextRequest) {
       pendingUsers = pendingResult.rows;
     }
 
+    // Get siswa stats per kelas with gender breakdown
+    const siswaStatsResult = await turso.execute({
+      sql: `SELECT k.id as kelas_id, k.nama_kelas,
+        COUNT(s.id) as total,
+        SUM(CASE WHEN LOWER(s.jenis_kelamin) = 'laki-laki' THEN 1 ELSE 0 END) as laki,
+        SUM(CASE WHEN LOWER(s.jenis_kelamin) = 'perempuan' THEN 1 ELSE 0 END) as perempuan
+        FROM kelas k
+        LEFT JOIN siswa s ON s.kelas_id = k.id
+        GROUP BY k.id, k.nama_kelas
+        HAVING COUNT(s.id) > 0
+        ORDER BY k.nama_kelas ASC`,
+    });
+    const siswaStats = siswaStatsResult.rows;
+    const totalSiswa = siswaStats.reduce((sum: number, r: any) => sum + Number(r.total), 0);
+    const totalLaki = siswaStats.reduce((sum: number, r: any) => sum + Number(r.laki), 0);
+    const totalPerempuan = siswaStats.reduce((sum: number, r: any) => sum + Number(r.perempuan), 0);
+
     return NextResponse.json({
       stats: {
         totalGuru: Number(totalGuru.rows[0].count),
@@ -143,7 +160,11 @@ export async function GET(req: NextRequest) {
         pendingCount: Number(pendingCount.rows[0].count),
         kehadiranHariIni: Number(kehadiranHariIni.rows[0].count),
         kehadiranBulanIni,
+        totalSiswa,
+        totalLaki,
+        totalPerempuan,
       },
+      siswaPerKelas: siswaStats,
       hari_id,
       dayName,
       isHoliday: holiday.rows.length > 0,
