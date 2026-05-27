@@ -805,6 +805,15 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
         </DialogContent>
       </Dialog>
 
+      {/* Kehadiran Form (Guru) */}
+      {role === 'guru' && (
+        <KehadiranForm
+          open={kehadiranFormOpen}
+          onClose={() => setKehadiranFormOpen(false)}
+          onSuccess={fetchDashboard}
+        />
+      )}
+
     </div>
   );
 }
