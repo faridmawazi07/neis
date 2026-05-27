@@ -14,7 +14,7 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users, GraduationCap, UserX, ArrowRightLeft, BadgeCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -40,10 +40,20 @@ export function SiswaPage() {
   const [formJenisKelamin, setFormJenisKelamin] = useState('');
   const [formLoading, setFormLoading] = useState(false);
 
-  // Delete
+  // Delete → Status change
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [statusChangeOpen, setStatusChangeOpen] = useState(false);
+  const [statusChangeId, setStatusChangeId] = useState<string | null>(null);
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
+  const [bulkStatusType, setBulkStatusType] = useState<'berhenti' | 'pindah'>('berhenti');
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
+
+  // Kelulusan
+  const [kelulusanOpen, setKelulusanOpen] = useState(false);
+  const [kelulusanSelected, setKelulusanSelected] = useState<string[]>([]);
+  const [kelulusanConfirmOpen, setKelulusanConfirmOpen] = useState(false);
+  const [kelulusanLoading, setKelulusanLoading] = useState(false);
 
   // Kenaikan kelas
   const [kenaikanOpen, setKenaikanOpen] = useState(false);
@@ -76,7 +86,11 @@ export function SiswaPage() {
     setLoading(true);
     try {
       let url = '/api/siswa?';
-      if (filterKelasId && filterKelasId !== 'all') url += `kelas_id=${filterKelasId}`;
+      if (filterKelasId && filterKelasId !== 'all' && ['berhenti', 'pindah', 'lulus'].includes(filterKelasId)) {
+        url += `status=${filterKelasId}`;
+      } else if (filterKelasId && filterKelasId !== 'all') {
+        url += `kelas_id=${filterKelasId}`;
+      }
       const res = await fetch(url, { credentials: 'include' });
       if (res.ok) {
         const result = await res.json();
@@ -112,27 +126,49 @@ export function SiswaPage() {
   const openEdit = (item: any) => {
     setEditData(item);
     setFormNis(item.nis); setFormNisn(item.nisn); setFormNama(item.nama);
-    setFormKelasId(item.kelas_id); setFormJenisKelamin(item.jenis_kelamin || '');
+    setFormKelasId(item.kelas_id || ''); setFormJenisKelamin(item.jenis_kelamin || '');
     setFormOpen(true);
   };
 
   const handleSubmit = async () => {
-    if (!formNis || !formNisn || !formNama || !formKelasId) {
-      toast({ title: 'Error', description: 'NIS, NISN, nama, dan kelas wajib diisi', variant: 'destructive' });
+    if (!formNis || !formNisn || !formNama) {
+      toast({ title: 'Error', description: 'NIS, NISN, dan nama wajib diisi', variant: 'destructive' });
+      return;
+    }
+    // For active students or reactivating, kelas is required
+    const isNonActive = editData && ['berhenti', 'pindah', 'lulus'].includes(editData.status);
+    if (!formKelasId && !isNonActive) {
+      toast({ title: 'Error', description: 'Kelas wajib diisi', variant: 'destructive' });
       return;
     }
     setFormLoading(true);
     try {
       if (editData) {
+        const updateBody: any = { id: editData.id, nis: formNis, nisn: formNisn, nama: formNama, jenis_kelamin: formJenisKelamin || null };
+        if (formKelasId) {
+          updateBody.kelas_id = formKelasId;
+          // If student was non-active and gets a class, reactivate them
+          if (['berhenti', 'pindah', 'lulus'].includes(editData.status)) {
+            updateBody.status = 'aktif';
+          }
+        } else if (isNonActive) {
+          // Keep status but no class
+          updateBody.kelas_id = null;
+        }
         const res = await fetch('/api/siswa', {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: editData.id, nis: formNis, nisn: formNisn, nama: formNama, kelas_id: formKelasId, jenis_kelamin: formJenisKelamin || null }),
+          body: JSON.stringify(updateBody),
           credentials: 'include',
         });
         const data = await res.json();
         if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
         toast({ title: 'Berhasil', description: 'Siswa berhasil diperbarui' });
       } else {
+        if (!formKelasId) {
+          toast({ title: 'Error', description: 'Kelas wajib diisi untuk siswa baru', variant: 'destructive' });
+          setFormLoading(false);
+          return;
+        }
         const res = await fetch('/api/siswa', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ nis: formNis, nisn: formNisn, nama: formNama, kelas_id: formKelasId, jenis_kelamin: formJenisKelamin || null }),
@@ -147,32 +183,49 @@ export function SiswaPage() {
     finally { setFormLoading(false); }
   };
 
-  const handleDelete = async (id?: string) => {
-    const targetId = id || deleteId;
+  const handleStatusChange = async (newStatus: 'berhenti' | 'pindah') => {
+    const targetId = statusChangeId;
     if (!targetId) return;
     try {
-      const res = await fetch('/api/siswa', {
-        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: targetId }), credentials: 'include',
+      const res = await fetch('/api/siswa?action=ubah-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [targetId], status: newStatus }), credentials: 'include',
       });
-      const data = await res.json();
-      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
-      toast({ title: 'Berhasil', description: 'Siswa berhasil dihapus' });
-      setDeleteId(null); setSelectedIds(prev => prev.filter(i => i !== targetId)); fetchData();
+      const result = await res.json();
+      if (!res.ok) { toast({ title: 'Gagal', description: result.error, variant: 'destructive' }); return; }
+      const label = newStatus === 'berhenti' ? 'berhenti' : 'pindah';
+      toast({ title: 'Berhasil', description: `Siswa dinyatakan ${label}` });
+      setStatusChangeOpen(false); setStatusChangeId(null); setSelectedIds(prev => prev.filter(i => i !== targetId)); fetchData();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkStatusChange = async () => {
     try {
-      const res = await fetch('/api/siswa', {
-        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: selectedIds }), credentials: 'include',
+      const res = await fetch('/api/siswa?action=ubah-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds, status: bulkStatusType }), credentials: 'include',
       });
-      const data = await res.json();
-      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
-      toast({ title: 'Berhasil', description: data.message });
-      setSelectedIds([]); setBulkDeleteOpen(false); fetchData();
+      const result = await res.json();
+      if (!res.ok) { toast({ title: 'Gagal', description: result.error, variant: 'destructive' }); return; }
+      const label = bulkStatusType === 'berhenti' ? 'berhenti' : 'pindah';
+      toast({ title: 'Berhasil', description: `${result.totalUpdated} siswa dinyatakan ${label}` });
+      setSelectedIds([]); setBulkStatusOpen(false); fetchData();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
+  };
+
+  const handleKelulusan = async () => {
+    setKelulusanLoading(true);
+    try {
+      const res = await fetch('/api/siswa?action=kelulusan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kelas_ids: kelulusanSelected }), credentials: 'include',
+      });
+      const result = await res.json();
+      if (!res.ok) { toast({ title: 'Gagal', description: result.error, variant: 'destructive' }); setKelulusanLoading(false); return; }
+      toast({ title: 'Berhasil', description: result.message });
+      setKelulusanConfirmOpen(false); setKelulusanOpen(false); setKelulusanSelected([]); fetchData();
+    } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
+    finally { setKelulusanLoading(false); }
   };
 
   const handleReset = async () => {

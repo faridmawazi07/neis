@@ -14,15 +14,25 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const kelas_id = searchParams.get('kelas_id');
 
-    let sql = `SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, k.nama_kelas FROM siswa s JOIN kelas k ON s.kelas_id = k.id WHERE 1=1`;
+    const status = searchParams.get('status');
+
+    let sql: string;
     const args: string[] = [];
 
-    if (kelas_id) {
-      sql += ` AND s.kelas_id = ?`;
+    if (status && ['berhenti', 'pindah', 'lulus'].includes(status)) {
+      // Non-active students: kelas_id is NULL, show status
+      sql = `SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, s.status, NULL as nama_kelas FROM siswa s WHERE s.status = ?`;
+      args.push(status);
+      sql += ` ORDER BY s.nama`;
+    } else if (kelas_id) {
+      // Filter by specific class (only active students)
+      sql = `SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, k.nama_kelas, s.status FROM siswa s JOIN kelas k ON s.kelas_id = k.id WHERE s.kelas_id = ? AND (s.status = 'aktif' OR s.status IS NULL)`;
       args.push(kelas_id);
+      sql += ` ORDER BY k.nama_kelas, s.nama`;
+    } else {
+      // All active students with class info
+      sql = `SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, k.nama_kelas, s.status FROM siswa s JOIN kelas k ON s.kelas_id = k.id WHERE s.status = 'aktif' OR s.status IS NULL ORDER BY k.nama_kelas, s.nama`;
     }
-
-    sql += ` ORDER BY k.nama_kelas, s.nama`;
 
     const result = await turso.execute({ sql, args });
     return NextResponse.json({ data: result.rows });
@@ -45,6 +55,99 @@ export async function POST(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action');
+
+    // Kelulusan - graduate class 12 students
+    if (action === 'kelulusan') {
+      const { kelas_ids } = await req.json();
+      if (!kelas_ids || !Array.isArray(kelas_ids) || kelas_ids.length === 0) {
+        return NextResponse.json({ error: 'Pilih kelas yang akan diluluskan' }, { status: 400 });
+      }
+
+      // Validate all class IDs exist and are grade 12
+      const validKelasIds: string[] = [];
+      for (const kid of kelas_ids) {
+        const kelasCheck = await turso.execute({
+          sql: 'SELECT id, nama_kelas FROM kelas WHERE id = ?',
+          args: [kid],
+        });
+        if (kelasCheck.rows.length > 0) {
+          validKelasIds.push(kid);
+        }
+      }
+
+      if (validKelasIds.length === 0) {
+        return NextResponse.json({ error: 'Tidak ada kelas valid untuk dikeluluskan' }, { status: 400 });
+      }
+
+      // Count students before graduating
+      const placeholders = validKelasIds.map(() => '?').join(',');
+      const countResult = await turso.execute({
+        sql: `SELECT COUNT(*) as count FROM siswa WHERE kelas_id IN (${placeholders}) AND (status = 'aktif' OR status IS NULL)`,
+        args: validKelasIds,
+      });
+      const totalGraduated = Number(countResult.rows[0]?.count) || 0;
+
+      if (totalGraduated === 0) {
+        return NextResponse.json({ error: 'Tidak ada siswa aktif di kelas yang dipilih' }, { status: 400 });
+      }
+
+      // Update status to 'lulus' and remove from class
+      const batchStmts = validKelasIds.map((kid: string) => ({
+        sql: "UPDATE siswa SET status = 'lulus', kelas_id = NULL WHERE kelas_id = ? AND (status = 'aktif' OR status IS NULL)",
+        args: [kid],
+      }));
+
+      try {
+        await turso.batch(batchStmts, 'write');
+      } catch (batchError: any) {
+        console.error('Kelulusan batch error:', batchError);
+        return NextResponse.json({ error: 'Gagal memproses kelulusan' }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        message: `Kelulusan berhasil. ${totalGraduated} siswa dinyatakan lulus.`,
+        totalGraduated,
+      });
+    }
+
+    // Change student status (berhenti/pindah/aktif)
+    if (action === 'ubah-status') {
+      const { ids, status: newStatus } = await req.json();
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return NextResponse.json({ error: 'Pilih siswa terlebih dahulu' }, { status: 400 });
+      }
+      if (!['berhenti', 'pindah', 'aktif'].includes(newStatus)) {
+        return NextResponse.json({ error: 'Status tidak valid' }, { status: 400 });
+      }
+
+      let totalUpdated = 0;
+
+      if (newStatus === 'aktif') {
+        // Reactivating: needs kelas_id to be set via PUT
+        for (const sid of ids) {
+          const result = await turso.execute({
+            sql: "UPDATE siswa SET status = 'aktif' WHERE id = ? AND status IN ('berhenti', 'pindah')",
+            args: [sid],
+          });
+          totalUpdated += result.rowsAffected;
+        }
+      } else {
+        // Deactivating: set status and remove from class
+        for (const sid of ids) {
+          const result = await turso.execute({
+            sql: `UPDATE siswa SET status = ?, kelas_id = NULL WHERE id = ? AND (status = 'aktif' OR status IS NULL)`,
+            args: [newStatus, sid],
+          });
+          totalUpdated += result.rowsAffected;
+        }
+      }
+
+      const statusLabel = newStatus === 'berhenti' ? 'berhenti' : newStatus === 'pindah' ? 'pindah' : 'aktif kembali';
+      return NextResponse.json({
+        message: `${totalUpdated} siswa dinyatakan ${statusLabel}.`,
+        totalUpdated,
+      });
+    }
 
     // Reset all siswa data
     if (action === 'reset') {
@@ -430,7 +533,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { id, nis, nisn, nama, kelas_id, jenis_kelamin } = await req.json();
+    const { id, nis, nisn, nama, kelas_id, jenis_kelamin, status } = await req.json();
     if (!id) {
       return NextResponse.json({ error: 'ID siswa wajib diisi' }, { status: 400 });
     }
@@ -479,16 +582,29 @@ export async function PUT(req: NextRequest) {
     }
 
     if (kelas_id !== undefined) {
-      // Check if kelas exists
-      const kelasCheck = await turso.execute({
-        sql: 'SELECT id FROM kelas WHERE id = ?',
-        args: [kelas_id],
-      });
-      if (kelasCheck.rows.length === 0) {
-        return NextResponse.json({ error: 'Kelas tidak ditemukan' }, { status: 404 });
+      if (kelas_id === null || kelas_id === '') {
+        // Allow setting kelas_id to null (for status changes)
+        updates.push('kelas_id = ?');
+        args.push(null);
+      } else {
+        // Check if kelas exists
+        const kelasCheck = await turso.execute({
+          sql: 'SELECT id FROM kelas WHERE id = ?',
+          args: [kelas_id],
+        });
+        if (kelasCheck.rows.length === 0) {
+          return NextResponse.json({ error: 'Kelas tidak ditemukan' }, { status: 404 });
+        }
+        updates.push('kelas_id = ?');
+        args.push(kelas_id);
       }
-      updates.push('kelas_id = ?');
-      args.push(kelas_id);
+    }
+
+    if (status !== undefined) {
+      // When setting status to 'aktif' with kelas_id, reactivate student
+      // When setting status to 'berhenti'/'pindah', kelas_id should be null
+      updates.push('status = ?');
+      args.push(status);
     }
 
     if (jenis_kelamin !== undefined) {
@@ -513,9 +629,9 @@ export async function PUT(req: NextRequest) {
       args,
     });
 
-    // Fetch updated siswa with kelas info
+    // Fetch updated siswa with kelas info (LEFT JOIN for null kelas_id)
     const updated = await turso.execute({
-      sql: 'SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, k.nama_kelas FROM siswa s JOIN kelas k ON s.kelas_id = k.id WHERE s.id = ?',
+      sql: 'SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, s.status, k.nama_kelas FROM siswa s LEFT JOIN kelas k ON s.kelas_id = k.id WHERE s.id = ?',
       args: [id],
     });
 

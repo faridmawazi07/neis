@@ -99,11 +99,24 @@ export async function initSchema() {
       nis TEXT UNIQUE,
       nisn TEXT UNIQUE,
       nama TEXT NOT NULL,
-      kelas_id TEXT NOT NULL,
+      kelas_id TEXT DEFAULT NULL,
       jenis_kelamin TEXT DEFAULT NULL,
+      status TEXT DEFAULT 'aktif',
       FOREIGN KEY (kelas_id) REFERENCES kelas(id)
     )
   `);
+
+  // Migration: add status column if not exists
+  try {
+    const cols = await turso.execute("PRAGMA table_info(siswa)");
+    const hasStatus = cols.rows.some((r: any) => r.name === 'status');
+    if (!hasStatus) {
+      await turso.execute("ALTER TABLE siswa ADD COLUMN status TEXT DEFAULT 'aktif'");
+      console.log('Migration: added status column to siswa table');
+    }
+  } catch (e) {
+    console.log('Migration check for siswa.status:', e);
+  }
 
   await turso.execute(`
     CREATE TABLE IF NOT EXISTS kehadiran_mengajar (
