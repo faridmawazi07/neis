@@ -14,7 +14,7 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users, GraduationCap, UserX, ArrowRightLeft, BadgeCheck } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users, GraduationCap, UserX, ArrowRightLeft, BadgeCheck, UserCheck, FileText, FileDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -64,6 +64,11 @@ export function SiswaPage() {
   const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(data.length);
   const currentData = paginatedData(data);
 
+  // Wali Kelas
+  const [waliKelasOpen, setWaliKelasOpen] = useState(false);
+  const [guruList, setGuruList] = useState<any[]>([]);
+  const [waliLoading, setWaliLoading] = useState<Record<string, boolean>>({});
+
   // Import/Export
   const importRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
@@ -110,6 +115,13 @@ export function SiswaPage() {
     try {
       const res = await fetch('/api/kelas', { credentials: 'include' });
       if (res.ok) setKelasList((await res.json()).data || []);
+    } catch {}
+  }, []);
+
+  const fetchGuruList = useCallback(async () => {
+    try {
+      const res = await fetch('/api/kelas?action=guru-list', { credentials: 'include' });
+      if (res.ok) setGuruList((await res.json()).data || []);
     } catch {}
   }, []);
 
@@ -640,6 +652,9 @@ export function SiswaPage() {
           <Button variant="outline" size="sm" onClick={() => setKenaikanOpen(true)}>
             <ArrowUpCircle className="h-4 w-4 mr-1" /> Kenaikan Kelas
           </Button>
+          <Button variant="outline" size="sm" onClick={() => { setWaliKelasOpen(true); fetchGuruList(); }}>
+            <UserCheck className="h-4 w-4 mr-1" /> Wali Kelas
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setKelulusanOpen(true)}>
             <GraduationCap className="h-4 w-4 mr-1" /> Kelulusan
           </Button>
@@ -1004,6 +1019,72 @@ export function SiswaPage() {
             >
               <GraduationCap className="h-4 w-4 mr-1" /> Proses Kelulusan
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Wali Kelas Dialog */}
+      <Dialog open={waliKelasOpen} onOpenChange={setWaliKelasOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><UserCheck className="h-5 w-5" />Wali Kelas</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground mb-2">Tentukan wali kelas untuk setiap kelas:</p>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {kelasList.map((k: any) => {
+              const siswaCount = data.filter((s: any) => s.kelas_id === k.id).length;
+              const currentWali = k.wali_kelas_id;
+              const isLoading = waliLoading[k.id] || false;
+              return (
+                <div key={k.id} className="flex items-center gap-3 p-2.5 rounded-lg border">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium">{k.nama_kelas}</span>
+                    <span className="text-xs text-muted-foreground ml-2">({siswaCount} siswa)</span>
+                  </div>
+                  <Select
+                    value={currentWali || '__none__'}
+                    onValueChange={async (v) => {
+                      const newWaliId = v === '__none__' ? null : v;
+                      setWaliLoading(prev => ({ ...prev, [k.id]: true }));
+                      try {
+                        const res = await fetch('/api/kelas', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ id: k.id, wali_kelas_id: newWaliId }),
+                          credentials: 'include',
+                        });
+                        const result = await res.json();
+                        if (!res.ok) {
+                          toast({ title: 'Gagal', description: result.error, variant: 'destructive' });
+                        } else {
+                          toast({ title: 'Berhasil', description: `Wali kelas ${k.nama_kelas} diperbarui` });
+                          fetchKelas();
+                        }
+                      } catch {
+                        toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' });
+                      } finally {
+                        setWaliLoading(prev => ({ ...prev, [k.id]: false }));
+                      }
+                    }}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger className="w-44 shrink-0">
+                      {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <SelectValue />}
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">-- Tanpa Wali --</SelectItem>
+                      {guruList.map((g: any) => (
+                        <SelectItem key={g.id} value={g.id}>{g.nama} {g.nip ? `(${g.nip})` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })}
+            {kelasList.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">Belum ada data kelas</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWaliKelasOpen(false)}>Tutup</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

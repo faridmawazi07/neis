@@ -255,3 +255,35 @@ Stage Summary:
 - Guru list endpoint available for dropdown population
 - My-kelas endpoint available for guru to find their assigned class
 - Pegawai can update wali kelas assignments (admin can update all fields)
+
+---
+Task ID: 6
+Agent: main
+Task: Update siswa API to allow guru wali kelas access
+
+Work Log:
+- Added `getGuruWaliKelas()` helper function after imports that queries kelas table for wali_kelas_id and returns the kelas_id or null
+- GET handler: Added `guru_id` filter parameter support
+  - When `?guru_id=xxx` is passed, returns only active students from the class where that guru is wali kelas
+  - Joins kelas table to check `wali_kelas_id` match
+- POST handler: Changed role check from admin/pegawai-only to also allow 'guru' role
+  - For guru: validates they are wali kelas using `getGuruWaliKelas(payload.userId)`, returns 403 if not assigned
+  - Normal create: guru can only add students to their own wali kelas class (kelas_id must match)
+  - action=ubah-status: guru can only change status for students in their wali kelas class (validates all student IDs belong to their class)
+  - action=bulk-import: guru can only import into their own class; validates/overrides kelas_id to their wali kelas class
+  - action=verify-import: same validation as bulk-import
+  - action=kelulusan: guru explicitly blocked (admin/pegawai only)
+  - action=reset: guru explicitly blocked (admin/pegawai only)
+  - action=kenaikan-kelas: guru explicitly blocked (admin/pegawai only)
+- PUT handler: Changed role check from admin/pegawai-only to also allow 'guru' role
+  - For guru: validates they are wali kelas, returns 403 if not assigned
+  - Validates student belongs to their wali kelas class before allowing edits
+  - Guru cannot change kelas_id (move student to another class) - returns 403
+- DELETE handler: Left unchanged (admin/pegawai only) - guru wali kelas cannot delete students
+- Lint passes cleanly
+
+Stage Summary:
+- Guru wali kelas can now: view their class students (GET ?guru_id=xxx), add students to their class, change status of their students, edit their students, import students into their class
+- Guru wali kelas cannot: delete students, process kelulusan/kenaikan-kelas, reset all data, or perform any action on students outside their class
+- Admin and pegawai retain full access as before
+- All validations use `getGuruWaliKelas(payload.userId)` to determine the guru's assigned class

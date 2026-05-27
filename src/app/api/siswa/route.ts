@@ -3,6 +3,15 @@ import { turso } from '@/lib/turso';
 import { verifyToken } from '@/lib/auth';
 import { v4 as uuidv4 } from 'uuid';
 
+// Helper: Get the kelas_id where a guru is assigned as wali kelas
+async function getGuruWaliKelas(guruId: string): Promise<string | null> {
+  const result = await turso.execute({
+    sql: 'SELECT id FROM kelas WHERE wali_kelas_id = ?',
+    args: [guruId],
+  });
+  return result.rows.length > 0 ? (result.rows[0].id as string) : null;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const token = req.cookies.get('neis-token')?.value || req.headers.get('Authorization')?.replace('Bearer ', '');
@@ -13,13 +22,17 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const kelas_id = searchParams.get('kelas_id');
-
+    const guru_id = searchParams.get('guru_id');
     const status = searchParams.get('status');
 
     let sql: string;
     const args: string[] = [];
 
-    if (status && ['berhenti', 'pindah', 'lulus'].includes(status)) {
+    if (guru_id) {
+      // Filter by guru's wali kelas class - return only students from that class
+      sql = `SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, k.nama_kelas, s.status FROM siswa s JOIN kelas k ON s.kelas_id = k.id WHERE k.wali_kelas_id = ? AND (s.status = 'aktif' OR s.status IS NULL) ORDER BY s.nama`;
+      args.push(guru_id);
+    } else if (status && ['berhenti', 'pindah', 'lulus'].includes(status)) {
       // Non-active students: show status, still have kelas_id for record
       sql = `SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, s.status, k.nama_kelas FROM siswa s LEFT JOIN kelas k ON s.kelas_id = k.id WHERE s.status = ?`;
       args.push(status);
@@ -49,15 +62,30 @@ export async function POST(req: NextRequest) {
     if (!payload) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (payload.role !== 'admin' && payload.role !== 'pegawai') {
+
+    // Allow admin, pegawai, and guru roles
+    if (payload.role !== 'admin' && payload.role !== 'pegawai' && payload.role !== 'guru') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // For guru: check if they are wali kelas
+    let guruWaliKelasId: string | null = null;
+    if (payload.role === 'guru') {
+      guruWaliKelasId = await getGuruWaliKelas(payload.userId);
+      if (!guruWaliKelasId) {
+        return NextResponse.json({ error: 'Anda bukan wali kelas. Hanya wali kelas yang dapat mengelola data siswa.' }, { status: 403 });
+      }
     }
 
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action');
 
-    // Kelulusan - graduate class 12 students
+    // Kelulusan - graduate class 12 students (admin/pegawai only)
     if (action === 'kelulusan') {
+      if (payload.role === 'guru') {
+        return NextResponse.json({ error: 'Guru wali kelas tidak dapat memproses kelulusan' }, { status: 403 });
+      }
+
       const { kelas_ids } = await req.json();
       if (!kelas_ids || !Array.isArray(kelas_ids) || kelas_ids.length === 0) {
         return NextResponse.json({ error: 'Pilih kelas yang akan diluluskan' }, { status: 400 });
@@ -120,6 +148,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Status tidak valid' }, { status: 400 });
       }
 
+      // For guru wali kelas: validate that all students belong to their class
+      if (payload.role === 'guru' && guruWaliKelasId) {
+        const placeholders = ids.map(() => '?').join(',');
+        const studentsInClass = await turso.execute({
+          sql: `SELECT id FROM siswa WHERE id IN (${placeholders}) AND kelas_id = ?`,
+          args: [...ids, guruWaliKelasId],
+        });
+        if (studentsInClass.rows.length !== ids.length) {
+          return NextResponse.json({ error: 'Anda hanya dapat mengubah status siswa di kelas Anda sebagai wali kelas' }, { status: 403 });
+        }
+      }
+
       let totalUpdated = 0;
 
       if (newStatus === 'aktif') {
@@ -149,8 +189,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Reset all siswa data
+    // Reset all siswa data (admin/pegawai only)
     if (action === 'reset') {
+      if (payload.role === 'guru') {
+        return NextResponse.json({ error: 'Guru wali kelas tidak dapat mereset data siswa' }, { status: 403 });
+      }
+
       const { confirm } = await req.json();
       if (confirm !== 'RESET_ALL_SISWA') {
         return NextResponse.json({ error: 'Konfirmasi tidak valid. Kirim { confirm: "RESET_ALL_SISWA" } untuk menghapus semua data siswa' }, { status: 400 });
@@ -160,8 +204,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Semua data siswa berhasil dihapus' });
     }
 
-    // Kenaikan kelas - bulk update with transaction and validation
+    // Kenaikan kelas - bulk update with transaction and validation (admin/pegawai only)
     if (action === 'kenaikan-kelas') {
+      if (payload.role === 'guru') {
+        return NextResponse.json({ error: 'Guru wali kelas tidak dapat memproses kenaikan kelas' }, { status: 403 });
+      }
+
       const { mapping, newClasses } = await req.json();
       if (!mapping || typeof mapping !== 'object') {
         return NextResponse.json({ error: 'Mapping kelas wajib diisi' }, { status: 400 });
@@ -328,6 +376,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Data siswa wajib diisi (array)' }, { status: 400 });
       }
 
+      // For guru wali kelas: override all kelas_id to their own class
+      if (payload.role === 'guru' && guruWaliKelasId) {
+        for (const item of items) {
+          if (item.kelas_id && item.kelas_id !== guruWaliKelasId) {
+            return NextResponse.json({ error: `Anda hanya dapat mengimport siswa ke kelas Anda sebagai wali kelas` }, { status: 403 });
+          }
+          item.kelas_id = guruWaliKelasId;
+        }
+      }
+
       const results = { success: [] as any[], failed: [] as any[], duplicates: [] as any[] };
 
       for (const item of items) {
@@ -402,6 +460,16 @@ export async function POST(req: NextRequest) {
       const { items } = await req.json();
       if (!items || !Array.isArray(items) || items.length === 0) {
         return NextResponse.json({ error: 'Data wajib diisi (array)' }, { status: 400 });
+      }
+
+      // For guru wali kelas: validate/override all kelas_id to their own class
+      if (payload.role === 'guru' && guruWaliKelasId) {
+        for (const item of items) {
+          if (item.kelas_id && item.kelas_id !== guruWaliKelasId) {
+            return NextResponse.json({ error: `Anda hanya dapat mengimport siswa ke kelas Anda sebagai wali kelas` }, { status: 403 });
+          }
+          item.kelas_id = guruWaliKelasId;
+        }
       }
 
       const nisList = items.map((item: any) => String(item.nis)).filter(Boolean);
@@ -479,6 +547,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'NIS, NISN, nama, dan kelas_id wajib diisi' }, { status: 400 });
     }
 
+    // For guru wali kelas: validate that kelas_id matches their assigned class
+    if (payload.role === 'guru' && guruWaliKelasId) {
+      if (kelas_id !== guruWaliKelasId) {
+        return NextResponse.json({ error: 'Anda hanya dapat menambahkan siswa ke kelas Anda sebagai wali kelas' }, { status: 403 });
+      }
+    }
+
     // Check if kelas exists
     const kelasCheck = await turso.execute({
       sql: 'SELECT id FROM kelas WHERE id = ?',
@@ -529,8 +604,19 @@ export async function PUT(req: NextRequest) {
     if (!payload) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (payload.role !== 'admin' && payload.role !== 'pegawai') {
+
+    // Allow admin, pegawai, and guru roles
+    if (payload.role !== 'admin' && payload.role !== 'pegawai' && payload.role !== 'guru') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    // For guru: check if they are wali kelas
+    let guruWaliKelasId: string | null = null;
+    if (payload.role === 'guru') {
+      guruWaliKelasId = await getGuruWaliKelas(payload.userId);
+      if (!guruWaliKelasId) {
+        return NextResponse.json({ error: 'Anda bukan wali kelas. Hanya wali kelas yang dapat mengubah data siswa.' }, { status: 403 });
+      }
     }
 
     const { id, nis, nisn, nama, kelas_id, jenis_kelamin, status } = await req.json();
@@ -540,11 +626,23 @@ export async function PUT(req: NextRequest) {
 
     // Check if siswa exists
     const existing = await turso.execute({
-      sql: 'SELECT id FROM siswa WHERE id = ?',
+      sql: 'SELECT id, kelas_id FROM siswa WHERE id = ?',
       args: [id],
     });
     if (existing.rows.length === 0) {
       return NextResponse.json({ error: 'Siswa tidak ditemukan' }, { status: 404 });
+    }
+
+    // For guru wali kelas: validate that the student belongs to their class
+    if (payload.role === 'guru' && guruWaliKelasId) {
+      const studentKelasId = existing.rows[0].kelas_id as string;
+      if (studentKelasId !== guruWaliKelasId) {
+        return NextResponse.json({ error: 'Anda hanya dapat mengubah siswa di kelas Anda sebagai wali kelas' }, { status: 403 });
+      }
+      // Guru cannot change kelas_id (move student to another class)
+      if (kelas_id !== undefined && kelas_id !== guruWaliKelasId) {
+        return NextResponse.json({ error: 'Anda tidak dapat memindahkan siswa ke kelas lain' }, { status: 403 });
+      }
     }
 
     const updates: string[] = [];
