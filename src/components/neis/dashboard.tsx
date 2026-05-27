@@ -62,6 +62,9 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   const [approvalLoading, setApprovalLoading] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Kehadiran form (guru)
+  const [kehadiranFormOpen, setKehadiranFormOpen] = useState(false);
+
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
