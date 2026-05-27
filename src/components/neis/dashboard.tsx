@@ -31,6 +31,7 @@ import type { PageName } from './app-layout';
 import { usePagination } from '@/hooks/use-pagination';
 import { PaginationBar } from '@/components/neis/pagination-bar';
 import { KehadiranForm } from './kehadiran-form';
+import { JadwalForm } from './jadwal-form';
 
 interface DashboardProps {
   onNavigate: (page: PageName) => void;
@@ -64,6 +65,8 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
 
   // Kehadiran form (guru)
   const [kehadiranFormOpen, setKehadiranFormOpen] = useState(false);
+  // Jadwal form (guru)
+  const [jadwalFormOpen, setJadwalFormOpen] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -537,7 +540,19 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
     <Card>
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <CardTitle className="text-base">Jadwal Pembelajaran</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">Jadwal Pembelajaran</CardTitle>
+            {role === 'guru' && (
+              <Button
+                size="sm"
+                className="bg-ocean hover:bg-ocean-dark text-white h-7 text-xs rounded-full px-3"
+                onClick={() => setJadwalFormOpen(true)}
+              >
+                <PlusCircle className="h-3.5 w-3.5 mr-1" />
+                Tambah
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Popover open={jadwalCalendarOpen} onOpenChange={setJadwalCalendarOpen}>
               <PopoverTrigger asChild>
@@ -671,6 +686,22 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
                 <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t">
                   <span className="font-semibold text-sm">Jumlah Kelas</span>
                   <span className="text-sm font-bold text-ocean dark:text-sky-400">{siswaPerKelas.length}</span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {(() => {
+                    const gradeMap: Record<string, number> = {};
+                    siswaPerKelas.forEach((k: any) => {
+                      const grade = k.nama_kelas.substring(0, 2).trim();
+                      gradeMap[grade] = (gradeMap[grade] || 0) + 1;
+                    });
+                    const grades = Object.entries(gradeMap).sort(([a], [b]) => a.localeCompare(b));
+                    return grades.map(([grade, count], i) => (
+                      <span key={grade}>
+                        {i > 0 && ' · '}
+                        Kelas {grade}: {count}
+                      </span>
+                    ));
+                  })()}
                 </div>
               </div>
               <div className="max-h-64 overflow-y-auto">
@@ -814,6 +845,15 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
         <KehadiranForm
           open={kehadiranFormOpen}
           onClose={() => setKehadiranFormOpen(false)}
+          onSuccess={fetchDashboard}
+        />
+      )}
+
+      {/* Jadwal Form (Guru) */}
+      {role === 'guru' && (
+        <JadwalForm
+          open={jadwalFormOpen}
+          onClose={() => setJadwalFormOpen(false)}
           onSuccess={fetchDashboard}
         />
       )}
