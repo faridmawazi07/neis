@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     // Kenaikan kelas - bulk update with transaction and validation
     if (action === 'kenaikan-kelas') {
-      const { mapping } = await req.json();
+      const { mapping, newClasses } = await req.json();
       if (!mapping || typeof mapping !== 'object') {
         return NextResponse.json({ error: 'Mapping kelas wajib diisi' }, { status: 400 });
       }
@@ -68,10 +68,62 @@ export async function POST(req: NextRequest) {
       const validEntries: [string, string][] = [];
       const errors: string[] = [];
       const skippedSelf: string[] = [];
+      const createdClasses: { id: string; nama_kelas: string; sourceKelasId: string }[] = [];
 
       for (const [oldKelasId, newKelasId] of Object.entries(mapping)) {
         if (typeof newKelasId !== 'string') continue;
         if (!newKelasId.trim()) continue;
+
+        // Handle new class creation
+        if (newKelasId === '__new__') {
+          const newClassName = newClasses?.[oldKelasId]?.trim();
+          if (!newClassName) {
+            errors.push(`Kelas baru untuk mapping tidak memiliki nama`);
+            continue;
+          }
+
+          // Validate source class exists
+          const oldKelasCheck = await turso.execute({
+            sql: 'SELECT id, nama_kelas FROM kelas WHERE id = ?',
+            args: [oldKelasId],
+          });
+          if (oldKelasCheck.rows.length === 0) {
+            errors.push(`Kelas asal dengan ID ${oldKelasId} tidak ditemukan`);
+            continue;
+          }
+
+          // Check if class name already exists
+          const existingClass = await turso.execute({
+            sql: 'SELECT id, nama_kelas FROM kelas WHERE nama_kelas = ?',
+            args: [newClassName],
+          });
+          if (existingClass.rows.length > 0) {
+            // Use existing class instead of creating new
+            const existingId = existingClass.rows[0].id as string;
+            if (oldKelasId === existingId) {
+              const namaKelas = existingClass.rows[0].nama_kelas as string;
+              skippedSelf.push(namaKelas);
+              continue;
+            }
+            validEntries.push([oldKelasId, existingId]);
+            continue;
+          }
+
+          // Create new class
+          const newClassId = uuidv4();
+          try {
+            await turso.execute({
+              sql: 'INSERT INTO kelas (id, nama_kelas) VALUES (?, ?)',
+              args: [newClassId, newClassName],
+            });
+            createdClasses.push({ id: newClassId, nama_kelas: newClassName, sourceKelasId: oldKelasId });
+            validEntries.push([oldKelasId, newClassId]);
+          } catch (err: any) {
+            errors.push(`Gagal membuat kelas baru "${newClassName}": ${err.message || 'Unknown error'}`);
+            continue;
+          }
+          continue;
+        }
 
         // Skip self-mapping
         if (oldKelasId === newKelasId) {
@@ -114,17 +166,19 @@ export async function POST(req: NextRequest) {
       }
 
       // Get student counts before update for detailed result
-      const classDetails: { oldKelasId: string; oldKelasName: string; newKelasId: string; newKelasName: string; studentCount: number }[] = [];
+      const classDetails: { oldKelasId: string; oldKelasName: string; newKelasId: string; newKelasName: string; studentCount: number; isNewClass: boolean }[] = [];
       for (const [oldKelasId, newKelasId] of validEntries) {
         const oldKelas = await turso.execute({ sql: 'SELECT nama_kelas FROM kelas WHERE id = ?', args: [oldKelasId] });
         const newKelas = await turso.execute({ sql: 'SELECT nama_kelas FROM kelas WHERE id = ?', args: [newKelasId] });
         const countResult = await turso.execute({ sql: 'SELECT COUNT(*) as count FROM siswa WHERE kelas_id = ?', args: [oldKelasId] });
+        const isNew = createdClasses.some(c => c.id === newKelasId);
         classDetails.push({
           oldKelasId,
           oldKelasName: (oldKelas.rows[0]?.nama_kelas as string) || oldKelasId,
           newKelasId,
           newKelasName: (newKelas.rows[0]?.nama_kelas as string) || newKelasId,
           studentCount: Number(countResult.rows[0]?.count) || 0,
+          isNewClass: isNew,
         });
       }
 
@@ -151,13 +205,15 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({
-        message: `Kenaikan kelas berhasil. ${totalUpdated} siswa diperbarui.`,
+        message: `Kenaikan kelas berhasil. ${totalUpdated} siswa diperbarui.${createdClasses.length > 0 ? ` ${createdClasses.length} kelas baru dibuat.` : ''}`,
         totalUpdated,
         details: classDetails.map(d => ({
           from: d.oldKelasName,
           to: d.newKelasName,
           count: d.studentCount,
+          isNewClass: d.isNewClass,
         })),
+        createdClasses: createdClasses.map(c => ({ id: c.id, nama_kelas: c.nama_kelas })),
         warnings: warnings.length > 0 ? warnings : undefined,
       });
     }
@@ -188,23 +244,23 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Check NIS uniqueness
+        // Check NIS uniqueness - skip if already exists (don't overwrite)
         const nisCheck = await turso.execute({
-          sql: 'SELECT id FROM siswa WHERE nis = ?',
+          sql: 'SELECT id, nama FROM siswa WHERE nis = ?',
           args: [String(nis)],
         });
         if (nisCheck.rows.length > 0) {
-          results.duplicates.push({ nis: String(nis), nisn: String(nisn), nama: String(nama), error: 'NIS sudah digunakan' });
+          results.duplicates.push({ nis: String(nis), nisn: String(nisn), nama: String(nama), error: `NIS sudah digunakan oleh "${nisCheck.rows[0].nama}"`, existing: true });
           continue;
         }
 
-        // Check NISN uniqueness
+        // Check NISN uniqueness - skip if already exists (don't overwrite)
         const nisnCheck = await turso.execute({
-          sql: 'SELECT id FROM siswa WHERE nisn = ?',
+          sql: 'SELECT id, nama FROM siswa WHERE nisn = ?',
           args: [String(nisn)],
         });
         if (nisnCheck.rows.length > 0) {
-          results.duplicates.push({ nis: String(nis), nisn: String(nisn), nama: String(nama), error: 'NISN sudah digunakan' });
+          results.duplicates.push({ nis: String(nis), nisn: String(nisn), nama: String(nama), error: `NISN sudah digunakan oleh "${nisnCheck.rows[0].nama}"`, existing: true });
           continue;
         }
 
@@ -228,7 +284,7 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({
-        message: `Import selesai: ${results.success.length} berhasil, ${results.duplicates.length} duplikat, ${results.failed.length} gagal`,
+        message: `Import selesai: ${results.success.length} berhasil, ${results.duplicates.length} sudah ada (dilewati), ${results.failed.length} gagal`,
         total: items.length,
         successCount: results.success.length,
         duplicateCount: results.duplicates.length,
@@ -236,6 +292,75 @@ export async function POST(req: NextRequest) {
         duplicates: results.duplicates,
         failed: results.failed,
       }, { status: 201 });
+    }
+
+    // Pre-verify import data against existing database
+    if (action === 'verify-import') {
+      const { items } = await req.json();
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return NextResponse.json({ error: 'Data wajib diisi (array)' }, { status: 400 });
+      }
+
+      const nisList = items.map((item: any) => String(item.nis)).filter(Boolean);
+      const nisnList = items.map((item: any) => String(item.nisn)).filter(Boolean);
+
+      // Get all existing NIS and NISN from database in one query each
+      const existingNis = new Set<string>();
+      const existingNisn = new Set<string>();
+
+      if (nisList.length > 0) {
+        const placeholders = nisList.map(() => '?').join(',');
+        const nisResult = await turso.execute({
+          sql: `SELECT nis FROM siswa WHERE nis IN (${placeholders})`,
+          args: nisList,
+        });
+        nisResult.rows.forEach(row => existingNis.add(row.nis as string));
+      }
+
+      if (nisnList.length > 0) {
+        const placeholders = nisnList.map(() => '?').join(',');
+        const nisnResult = await turso.execute({
+          sql: `SELECT nisn FROM siswa WHERE nisn IN (${placeholders})`,
+          args: nisnList,
+        });
+        nisnResult.rows.forEach(row => existingNisn.add(row.nisn as string));
+      }
+
+      const newItems: any[] = [];
+      const duplicateItems: any[] = [];
+      const invalidItems: any[] = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const { nis, nisn, nama, namaKelas, jenis_kelamin } = item;
+
+        if (!nis || !nisn || !nama) {
+          invalidItems.push({ index: i, nis: String(nis || '-'), nama: String(nama || '-'), error: 'Data tidak lengkap (NIS/NISN/Nama kosong)' });
+          continue;
+        }
+
+        if (existingNis.has(String(nis))) {
+          duplicateItems.push({ index: i, nis: String(nis), nisn: String(nisn), nama: String(nama), reason: 'NIS sudah terdaftar' });
+          continue;
+        }
+
+        if (existingNisn.has(String(nisn))) {
+          duplicateItems.push({ index: i, nis: String(nis), nisn: String(nisn), nama: String(nama), reason: 'NISN sudah terdaftar' });
+          continue;
+        }
+
+        newItems.push(item);
+      }
+
+      return NextResponse.json({
+        total: items.length,
+        newCount: newItems.length,
+        duplicateCount: duplicateItems.length,
+        invalidCount: invalidItems.length,
+        newItems,
+        duplicates: duplicateItems,
+        invalid: invalidItems,
+      });
     }
 
     // Normal create siswa

@@ -68,6 +68,9 @@ export function SiswaPage() {
   const [importErrors, setImportErrors] = useState<any[]>([]);
   const [importDone, setImportDone] = useState(false);
   const [importSteps, setImportSteps] = useState<{ step: string; status: 'processing' | 'done' | 'warning' | 'error'; detail?: string }[]>([]);
+  const [importVerifyResult, setImportVerifyResult] = useState<any>(null);
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [importPendingItems, setImportPendingItems] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -309,6 +312,8 @@ export function SiswaPage() {
     setImportErrors([]);
     setImportDone(false);
     setImportSteps([{ step: 'Membaca file Excel...', status: 'processing' }]);
+    setImportVerifyResult(null);
+    setImportPendingItems([]);
 
     try {
       const XLSX = await import('xlsx');
@@ -318,7 +323,7 @@ export function SiswaPage() {
       const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
       setImportSteps(prev => [...prev, { step: 'Membaca file Excel...', status: 'done', detail: `${rows.length - 1} baris data` }]);
-      setImportSteps(prev => [...prev, { step: 'Memvalidasi data...', status: 'processing' }]);
+      setImportSteps(prev => [...prev, { step: 'Memvalidasi format data...', status: 'processing' }]);
 
       // Parse rows, skip header
       const items: any[] = [];
@@ -336,16 +341,14 @@ export function SiswaPage() {
         }
         items.push({
           nis: String(nis), nisn: String(nisn), nama: String(nama),
-          kelas_id: kelas.id, jenis_kelamin: jk || null,
+          namaKelas: String(namaKelas), kelas_id: kelas.id, jenis_kelamin: jk || null,
         });
       }
 
-      setImportTotal(items.length);
-
       if (skippedRows.length > 0) {
-        setImportSteps(prev => [...prev, { step: 'Memvalidasi data...', status: 'warning', detail: `${skippedRows.length} baris dilewati` }]);
+        setImportSteps(prev => [...prev, { step: 'Memvalidasi format data...', status: 'warning', detail: `${skippedRows.length} baris dilewati` }]);
       } else {
-        setImportSteps(prev => [...prev, { step: 'Memvalidasi data...', status: 'done', detail: `${items.length} data valid` }]);
+        setImportSteps(prev => [...prev, { step: 'Memvalidasi format data...', status: 'done', detail: `${items.length} data valid` }]);
       }
 
       if (items.length === 0) {
@@ -359,76 +362,62 @@ export function SiswaPage() {
         return;
       }
 
-      // Send in batches of 50 for better UX with progress updates
-      const BATCH_SIZE = 50;
-      const totalBatches = Math.ceil(items.length / BATCH_SIZE);
-      let totalSuccess = 0;
-      let totalDuplicates = 0;
-      let totalFailed = skippedRows.length;
-      const allErrors = [...skippedRows];
+      // Pre-verify against existing database
+      setImportSteps(prev => [...prev, { step: 'Memverifikasi data duplikat...', status: 'processing' }]);
 
-      for (let batch = 0; batch < items.length; batch += BATCH_SIZE) {
-        const batchNum = Math.floor(batch / BATCH_SIZE) + 1;
-        const batchItems = items.slice(batch, batch + BATCH_SIZE);
+      const verifyRes = await fetch('/api/siswa?action=verify-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+        credentials: 'include',
+      });
 
-        setImportSteps(prev => [...prev, { step: `Mengimpor batch ${batchNum}/${totalBatches}...`, status: 'processing', detail: `${batchItems.length} data` }]);
-
-        const res = await fetch('/api/siswa?action=bulk-import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: batchItems }),
-          credentials: 'include',
-        });
-
-        const processed = Math.min(batch + BATCH_SIZE, items.length);
-        setImportProcessed(processed);
-        setImportProgress(Math.round((processed / items.length) * 100));
-
-        if (res.ok) {
-          const result = await res.json();
-          totalSuccess += result.successCount || 0;
-          totalDuplicates += result.duplicateCount || 0;
-          totalFailed += result.failedCount || 0;
-          setImportSuccess(totalSuccess);
-          setImportDuplicates(totalDuplicates);
-          setImportFailed(totalFailed);
-
-          const batchStatus = (result.failedCount > 0 || result.duplicateCount > 0) ? 'warning' : 'done';
-          const batchDetail = `✓${result.successCount || 0} dup:${result.duplicateCount || 0} gagal:${result.failedCount || 0}`;
-          setImportSteps(prev => [...prev, { step: `Batch ${batchNum}/${totalBatches}`, status: batchStatus, detail: batchDetail }]);
-
-          if (result.duplicates?.length > 0) {
-            allErrors.push(...result.duplicates.map((d: any) => ({ ...d, type: 'duplikat' })));
-          }
-          if (result.failed?.length > 0) {
-            allErrors.push(...result.failed.map((f: any) => ({ ...f, type: 'gagal' })));
-          }
-          setImportErrors(allErrors);
-        } else {
-          totalFailed += batchItems.length;
-          setImportFailed(totalFailed);
-          setImportSteps(prev => [...prev, { step: `Batch ${batchNum}/${totalBatches}`, status: 'error', detail: 'Gagal diproses' }]);
-          allErrors.push({ error: `Batch gagal diproses (baris ${batch + 1}-${processed})`, type: 'gagal' });
-          setImportErrors(allErrors);
-        }
+      if (!verifyRes.ok) {
+        setImportSteps(prev => [...prev, { step: 'Verifikasi gagal', status: 'error' }]);
+        setImporting(false);
+        setImportDone(true);
+        toast({ title: 'Error', description: 'Gagal memverifikasi data', variant: 'destructive' });
+        e.target.value = '';
+        return;
       }
 
-      const finalStatus = totalFailed > 0 ? 'warning' : 'done';
-      const finalDetail = `${totalSuccess} berhasil, ${totalDuplicates} duplikat, ${totalFailed} gagal`;
-      setImportSteps(prev => [...prev, { step: 'Import selesai', status: finalStatus, detail: finalDetail }]);
-      setImportDone(true);
-      setImporting(false);
-      setImportProgress(100);
-      fetchData();
+      const verifyResult = await verifyRes.json();
+      setImportVerifyResult(verifyResult);
 
-      // Show toast on completion
-      if (totalFailed === 0 && totalDuplicates === 0) {
-        toast({ title: 'Import Berhasil', description: `${totalSuccess} data siswa berhasil diimpor` });
-      } else if (totalSuccess > 0) {
-        toast({ title: 'Import Selesai', description: `${totalSuccess} berhasil, ${totalDuplicates} duplikat, ${totalFailed} gagal`, variant: 'destructive' });
+      const dupCount = verifyResult.duplicateCount || 0;
+      const invalidCount = verifyResult.invalidCount || 0;
+      const newCount = verifyResult.newCount || 0;
+
+      if (dupCount > 0) {
+        setImportSteps(prev => [...prev, { step: 'Memverifikasi data duplikat...', status: 'warning', detail: `${dupCount} data sudah ada, ${newCount} data baru` }]);
       } else {
-        toast({ title: 'Import Gagal', description: 'Semua data gagal diimpor', variant: 'destructive' });
+        setImportSteps(prev => [...prev, { step: 'Memverifikasi data duplikat...', status: 'done', detail: `Semua ${newCount} data baru` }]);
       }
+
+      if (newCount === 0) {
+        setImporting(false);
+        setImportDone(true);
+        setImportFailed(skippedRows.length + invalidCount);
+        setImportDuplicates(dupCount);
+        setImportErrors([
+          ...skippedRows,
+          ...verifyResult.duplicates.map((d: any) => ({ nis: d.nis, nama: d.nama, error: d.reason, type: 'duplikat' as const })),
+        ]);
+        setImportSteps(prev => [...prev, { step: 'Import selesai', status: 'warning', detail: 'Semua data sudah ada, tidak ada yang diimpor' }]);
+        toast({ title: 'Import Dilewati', description: 'Semua data sudah ada di database, tidak ada data baru yang diimpor', variant: 'destructive' });
+        e.target.value = '';
+        return;
+      }
+
+      // Store pending items and show confirmation
+      setImportPendingItems(verifyResult.newItems.map((item: any) => ({
+        nis: item.nis, nisn: item.nisn, nama: item.nama,
+        kelas_id: item.kelas_id, jenis_kelamin: item.jenis_kelamin,
+      })));
+      setImportTotal(newCount);
+      setImporting(false);
+      setImportConfirmOpen(true);
+
     } catch {
       toast({ title: 'Error', description: 'Gagal membaca file Excel', variant: 'destructive' });
       setImportSteps(prev => [...prev, { step: 'Gagal membaca file', status: 'error' }]);
@@ -436,6 +425,93 @@ export function SiswaPage() {
       setImportDone(true);
     }
     e.target.value = '';
+  };
+
+  const executeImport = async () => {
+    setImportConfirmOpen(false);
+    setImporting(true);
+    setImportProgress(0);
+    setImportProcessed(0);
+    setImportSuccess(0);
+    setImportDuplicates(importVerifyResult?.duplicateCount || 0);
+    setImportFailed(importVerifyResult?.invalidCount || 0);
+    setImportErrors([
+      ...(importVerifyResult?.duplicates || []).map((d: any) => ({ nis: d.nis, nama: d.nama, error: d.reason, type: 'duplikat' as const })),
+    ]);
+
+    const items = importPendingItems;
+    if (items.length === 0) {
+      setImporting(false);
+      setImportDone(true);
+      return;
+    }
+
+    // Send in batches of 50
+    const BATCH_SIZE = 50;
+    const totalBatches = Math.ceil(items.length / BATCH_SIZE);
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    const allErrors = [...(importVerifyResult?.duplicates || []).map((d: any) => ({ nis: d.nis, nama: d.nama, error: d.reason, type: 'duplikat' as const }))];
+
+    setImportSteps(prev => [...prev, { step: `Mengimpor ${items.length} data baru...`, status: 'processing' }]);
+
+    for (let batch = 0; batch < items.length; batch += BATCH_SIZE) {
+      const batchNum = Math.floor(batch / BATCH_SIZE) + 1;
+      const batchItems = items.slice(batch, batch + BATCH_SIZE);
+
+      setImportSteps(prev => [...prev, { step: `Mengimpor batch ${batchNum}/${totalBatches}...`, status: 'processing', detail: `${batchItems.length} data` }]);
+
+      const res = await fetch('/api/siswa?action=bulk-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: batchItems }),
+        credentials: 'include',
+      });
+
+      const processed = Math.min(batch + BATCH_SIZE, items.length);
+      setImportProcessed(processed);
+      setImportProgress(Math.round((processed / items.length) * 100));
+
+      if (res.ok) {
+        const result = await res.json();
+        totalSuccess += result.successCount || 0;
+        totalFailed += result.failedCount || 0;
+        setImportSuccess(totalSuccess);
+        setImportFailed(totalFailed + (importVerifyResult?.invalidCount || 0));
+
+        const batchStatus = result.failedCount > 0 ? 'warning' : 'done';
+        const batchDetail = `✓${result.successCount || 0} gagal:${result.failedCount || 0}`;
+        setImportSteps(prev => [...prev, { step: `Batch ${batchNum}/${totalBatches}`, status: batchStatus, detail: batchDetail }]);
+
+        if (result.failed?.length > 0) {
+          allErrors.push(...result.failed.map((f: any) => ({ ...f, type: 'gagal' as const })));
+        }
+        setImportErrors(allErrors);
+      } else {
+        totalFailed += batchItems.length;
+        setImportFailed(totalFailed);
+        setImportSteps(prev => [...prev, { step: `Batch ${batchNum}/${totalBatches}`, status: 'error', detail: 'Gagal diproses' }]);
+        allErrors.push({ error: `Batch gagal diproses`, type: 'gagal' as const });
+        setImportErrors(allErrors);
+      }
+    }
+
+    const finalStatus = totalFailed > 0 ? 'warning' : 'done';
+    const dupCount = importVerifyResult?.duplicateCount || 0;
+    const finalDetail = `${totalSuccess} berhasil, ${dupCount} sudah ada (dilewati), ${totalFailed} gagal`;
+    setImportSteps(prev => [...prev, { step: 'Import selesai', status: finalStatus, detail: finalDetail }]);
+    setImportDone(true);
+    setImporting(false);
+    setImportProgress(100);
+    fetchData();
+
+    if (totalFailed === 0 && dupCount === 0) {
+      toast({ title: 'Import Berhasil', description: `${totalSuccess} data siswa berhasil diimpor` });
+    } else if (totalSuccess > 0) {
+      toast({ title: 'Import Selesai', description: `${totalSuccess} berhasil, ${dupCount} sudah ada (dilewati), ${totalFailed} gagal` });
+    } else {
+      toast({ title: 'Import Gagal', description: 'Semua data gagal diimpor', variant: 'destructive' });
+    }
   };
 
   const toggleSelect = (id: string) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
