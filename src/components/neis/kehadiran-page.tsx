@@ -76,6 +76,9 @@ export function KehadiranPage() {
   // Absen (I/S & Alfa) names popup
   const [absenPopup, setAbsenPopup] = useState<{ type: string; names: string[] } | null>(null);
 
+  // Helper: normalize siswa_absen_json entries to name strings (handles both old string[] and new {id,nama}[] formats)
+  const normalizeAbsenNames = (arr: any[]): string[] => arr.map((item: any) => typeof item === 'string' ? item : (item.nama || ''));
+
   // Pagination
   const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(data.length);
 
@@ -559,7 +562,7 @@ export function KehadiranPage() {
                             onClick={() => {
                               try {
                                 const parsed = JSON.parse(d.siswa_absen_json || '{}');
-                                setAbsenPopup({ type: 'Izin/Sakit', names: parsed.izin_sakit || [] });
+                                setAbsenPopup({ type: 'Izin/Sakit', names: normalizeAbsenNames(parsed.izin_sakit || []) });
                               } catch {
                                 setAbsenPopup({ type: 'Izin/Sakit', names: [] });
                               }
@@ -579,7 +582,7 @@ export function KehadiranPage() {
                             onClick={() => {
                               try {
                                 const parsed = JSON.parse(d.siswa_absen_json || '{}');
-                                setAbsenPopup({ type: 'Alfa', names: parsed.alfa || [] });
+                                setAbsenPopup({ type: 'Alfa', names: normalizeAbsenNames(parsed.alfa || []) });
                               } catch {
                                 setAbsenPopup({ type: 'Alfa', names: [] });
                               }

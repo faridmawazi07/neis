@@ -191,7 +191,7 @@ export function SiswaPage() {
     let hasEmpty = false;
 
     for (const [oldKelasId, newKelasId] of Object.entries(kenaikanMapping)) {
-      if (!newKelasId) { hasEmpty = true; continue; }
+      if (!newKelasId || newKelasId === '__none__') { hasEmpty = true; continue; }
       const oldKelas = kelasList.find((k: any) => k.id === oldKelasId);
       const newKelas = kelasList.find((k: any) => k.id === newKelasId);
       if (!oldKelas || !newKelas) continue;
@@ -215,9 +215,13 @@ export function SiswaPage() {
   const handleKenaikanKelas = async () => {
     setKenaikanLoading(true);
     try {
+      const cleanMapping: Record<string, string> = {};
+      for (const [key, val] of Object.entries(kenaikanMapping)) {
+        if (val && val !== '__none__') cleanMapping[key] = val;
+      }
       const res = await fetch('/api/siswa?action=kenaikan-kelas', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mapping: kenaikanMapping }), credentials: 'include',
+        body: JSON.stringify({ mapping: cleanMapping }), credentials: 'include',
       });
       const data = await res.json();
       if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); setKenaikanLoading(false); return; }
@@ -699,10 +703,16 @@ export function SiswaPage() {
                     </div>
                   </div>
                   <span className="text-muted-foreground shrink-0">→</span>
-                  <Select value={kenaikanMapping[k.id] || ''} onValueChange={(v) => setKenaikanMapping(prev => ({ ...prev, [k.id]: v }))}>
+                  <Select value={kenaikanMapping[k.id] || ''} onValueChange={(v) => {
+                    if (v === '__none__') {
+                      setKenaikanMapping(prev => { const next = { ...prev }; delete next[k.id]; return next; });
+                    } else {
+                      setKenaikanMapping(prev => ({ ...prev, [k.id]: v }));
+                    }
+                  }}>
                     <SelectTrigger className="w-40 shrink-0"><SelectValue placeholder="Kelas tujuan" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">-- Tidak Dipindah --</SelectItem>
+                      <SelectItem value="__none__">-- Tidak Dipindah --</SelectItem>
                       {kelasList.filter((k2: any) => k2.id !== k.id).map((k2: any) => <SelectItem key={k2.id} value={k2.id}>{k2.nama_kelas}</SelectItem>)}
                     </SelectContent>
                   </Select>

@@ -161,7 +161,11 @@ export function KehadiranForm({ open, onClose, onSuccess, editData }: KehadiranF
       setJumlahSiswaTotal(editData.jumlah_siswa_total || 0);
       try {
         const parsed = JSON.parse(editData.siswa_absen_json || '{}');
-        setSiswaAbsenJson({ izin_sakit: parsed.izin_sakit || [], alfa: parsed.alfa || [] });
+        // Handle both old format (string[]) and new format ({id, nama}[])
+        const normalize = (arr: any[]) => arr.map((item: any) =>
+          typeof item === 'string' ? { id: '', nama: item } : { id: item.id || '', nama: item.nama || '' }
+        );
+        setSiswaAbsenJson({ izin_sakit: normalize(parsed.izin_sakit || []), alfa: normalize(parsed.alfa || []) });
       } catch {
         setSiswaAbsenJson({ izin_sakit: [], alfa: [] });
       }
@@ -290,12 +294,13 @@ export function KehadiranForm({ open, onClose, onSuccess, editData }: KehadiranF
   }, [jumlahHadir, jumlahIzinSakit, jumlahAlfa]);
 
   const handleAbsenceSave = (izinSakit: string[], alfa: string[]) => {
-    const izinSakitNames = siswaList.filter((s) => izinSakit.includes(s.id)).map((s) => s.nama);
-    const alfaNames = siswaList.filter((s) => alfa.includes(s.id)).map((s) => s.nama);
+    // New format: include both id and nama for each student
+    const izinSakitEntries = siswaList.filter((s) => izinSakit.includes(s.id)).map((s) => ({ id: s.id, nama: s.nama }));
+    const alfaEntries = siswaList.filter((s) => alfa.includes(s.id)).map((s) => ({ id: s.id, nama: s.nama }));
 
-    setSiswaAbsenJson({ izin_sakit: izinSakitNames, alfa: alfaNames });
-    setJumlahIzinSakit(izinSakitNames.length);
-    setJumlahAlfa(alfaNames.length);
+    setSiswaAbsenJson({ izin_sakit: izinSakitEntries as any, alfa: alfaEntries as any });
+    setJumlahIzinSakit(izinSakitEntries.length);
+    setJumlahAlfa(alfaEntries.length);
   };
 
   const handleSubmit = async () => {
@@ -572,12 +577,23 @@ export function KehadiranForm({ open, onClose, onSuccess, editData }: KehadiranF
             siswaList={siswaList}
             selectedIzinSakit={
               siswaAbsenJson.izin_sakit
-                .map((name) => siswaList.find((s) => s.nama === name)?.id || '')
+                .map((item: any) => {
+                  const id = typeof item === 'string' ? '' : item.id;
+                  // Try to match by ID first, then by name
+                  if (id) return siswaList.find((s) => s.id === id)?.id || '';
+                  const name = typeof item === 'string' ? item : item.nama;
+                  return siswaList.find((s) => s.nama === name)?.id || '';
+                })
                 .filter(Boolean)
             }
             selectedAlfa={
               siswaAbsenJson.alfa
-                .map((name) => siswaList.find((s) => s.nama === name)?.id || '')
+                .map((item: any) => {
+                  const id = typeof item === 'string' ? '' : item.id;
+                  if (id) return siswaList.find((s) => s.id === id)?.id || '';
+                  const name = typeof item === 'string' ? item : item.nama;
+                  return siswaList.find((s) => s.nama === name)?.id || '';
+                })
                 .filter(Boolean)
             }
             onSave={handleAbsenceSave}

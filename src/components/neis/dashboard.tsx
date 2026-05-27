@@ -109,7 +109,11 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
   const showAbsenceModal = (type: string, kelasNama: string, siswaAbsenJson: string) => {
     try {
       const parsed = JSON.parse(siswaAbsenJson || '{}');
-      const students = (parsed[type] || []).map((name: string) => ({ nama: name }));
+      // Handle both old format (string[]) and new format ({id, nama}[])
+      const students = (parsed[type] || []).map((item: any) => ({
+        nama: typeof item === 'string' ? item : (item.nama || ''),
+        id: typeof item === 'string' ? '' : (item.id || ''),
+      }));
       setAbsenceModalData({ type, students, kelas: kelasNama });
       setAbsenceModalOpen(true);
     } catch {
@@ -352,14 +356,15 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
       });
 
       // Detail: names of Izin/Sakit & Alfa students per class
+      const normalizeNames = (arr: any[]): string[] => arr.map((item: any) => typeof item === 'string' ? item : (item.nama || ''));
       const detailRows: string[][] = [];
       kehadiranSiswa.forEach((k: any) => {
         let izinSakit: string[] = [];
         let alfa: string[] = [];
         try {
           const parsed = JSON.parse(k.siswa_absen_json || '{}');
-          izinSakit = parsed.izin_sakit || [];
-          alfa = parsed.alfa || [];
+          izinSakit = normalizeNames(parsed.izin_sakit || []);
+          alfa = normalizeNames(parsed.alfa || []);
         } catch {}
         if (izinSakit.length > 0 || alfa.length > 0) {
           detailRows.push([
@@ -391,14 +396,15 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
 
     const handleExportExcel = async () => {
       const XLSX = await import('xlsx');
+      const normalizeNames = (arr: any[]): string[] => arr.map((item: any) => typeof item === 'string' ? item : (item.nama || ''));
       const wsData: any[][] = [['Kelas', 'Hadir', 'Izin/Sakit', 'Alfa', 'Jumlah', 'Nama Izin/Sakit', 'Nama Alfa']];
       kehadiranSiswa.forEach((k: any) => {
         let izinSakit: string[] = [];
         let alfa: string[] = [];
         try {
           const parsed = JSON.parse(k.siswa_absen_json || '{}');
-          izinSakit = parsed.izin_sakit || [];
-          alfa = parsed.alfa || [];
+          izinSakit = normalizeNames(parsed.izin_sakit || []);
+          alfa = normalizeNames(parsed.alfa || []);
         } catch {}
         wsData.push([
           k.nama_kelas,
