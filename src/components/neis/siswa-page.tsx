@@ -48,6 +48,7 @@ export function SiswaPage() {
   // Kenaikan kelas
   const [kenaikanOpen, setKenaikanOpen] = useState(false);
   const [kenaikanMapping, setKenaikanMapping] = useState<Record<string, string>>({});
+  const [kenaikanNewClasses, setKenaikanNewClasses] = useState<Record<string, string>>({}); // sourceKelasId -> new class name
   const [kenaikanConfirmOpen, setKenaikanConfirmOpen] = useState(false);
   const [kenaikanLoading, setKenaikanLoading] = useState(false);
 
@@ -186,15 +187,46 @@ export function SiswaPage() {
 
   // Compute kenaikan preview data
   const kenaikanPreview = (() => {
-    const validMappings: { oldKelasId: string; oldKelasName: string; newKelasId: string; newKelasName: string; studentCount: number }[] = [];
+    const validMappings: { oldKelasId: string; oldKelasName: string; newKelasId: string; newKelasName: string; studentCount: number; isNewClass: boolean }[] = [];
     const skipped: string[] = [];
     let hasEmpty = false;
+    const newClassNames: string[] = [];
 
     for (const [oldKelasId, newKelasId] of Object.entries(kenaikanMapping)) {
       if (!newKelasId || newKelasId === '__none__') { hasEmpty = true; continue; }
       const oldKelas = kelasList.find((k: any) => k.id === oldKelasId);
+      if (!oldKelas) continue;
+
+      // Handle new class creation
+      if (newKelasId === '__new__') {
+        const newClassName = kenaikanNewClasses[oldKelasId]?.trim();
+        if (!newClassName) continue;
+        // Check if class name already exists
+        const existingClass = kelasList.find((k: any) => k.nama_kelas.toLowerCase() === newClassName.toLowerCase());
+        if (existingClass) {
+          // Use existing class instead
+          if (oldKelasId === existingClass.id) {
+            skipped.push(oldKelas.nama_kelas);
+            continue;
+          }
+          const studentCount = data.filter((s: any) => s.kelas_id === oldKelasId).length;
+          validMappings.push({
+            oldKelasId, oldKelasName: oldKelas.nama_kelas,
+            newKelasId: existingClass.id, newKelasName: existingClass.nama_kelas, studentCount, isNewClass: false,
+          });
+        } else {
+          const studentCount = data.filter((s: any) => s.kelas_id === oldKelasId).length;
+          validMappings.push({
+            oldKelasId, oldKelasName: oldKelas.nama_kelas,
+            newKelasId: '__new__', newKelasName: newClassName, studentCount, isNewClass: true,
+          });
+          newClassNames.push(newClassName);
+        }
+        continue;
+      }
+
       const newKelas = kelasList.find((k: any) => k.id === newKelasId);
-      if (!oldKelas || !newKelas) continue;
+      if (!newKelas) continue;
 
       if (oldKelasId === newKelasId) {
         skipped.push(oldKelas.nama_kelas);
@@ -204,24 +236,30 @@ export function SiswaPage() {
       const studentCount = data.filter((s: any) => s.kelas_id === oldKelasId).length;
       validMappings.push({
         oldKelasId, oldKelasName: oldKelas.nama_kelas,
-        newKelasId, newKelasName: newKelas.nama_kelas, studentCount,
+        newKelasId, newKelasName: newKelas.nama_kelas, studentCount, isNewClass: false,
       });
     }
 
     const totalAffected = validMappings.reduce((sum, m) => sum + m.studentCount, 0);
-    return { validMappings, skipped, hasEmpty, totalAffected, hasValidMappings: validMappings.length > 0 };
+    return { validMappings, skipped, hasEmpty, totalAffected, hasValidMappings: validMappings.length > 0, newClassNames };
   })();
 
   const handleKenaikanKelas = async () => {
     setKenaikanLoading(true);
     try {
       const cleanMapping: Record<string, string> = {};
+      const newClasses: Record<string, string> = {}; // sourceKelasId -> new class name
       for (const [key, val] of Object.entries(kenaikanMapping)) {
-        if (val && val !== '__none__') cleanMapping[key] = val;
+        if (val && val !== '__none__') {
+          cleanMapping[key] = val;
+          if (val === '__new__' && kenaikanNewClasses[key]?.trim()) {
+            newClasses[key] = kenaikanNewClasses[key].trim();
+          }
+        }
       }
       const res = await fetch('/api/siswa?action=kenaikan-kelas', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mapping: cleanMapping }), credentials: 'include',
+        body: JSON.stringify({ mapping: cleanMapping, newClasses }), credentials: 'include',
       });
       const data = await res.json();
       if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); setKenaikanLoading(false); return; }
@@ -237,7 +275,9 @@ export function SiswaPage() {
       setKenaikanConfirmOpen(false);
       setKenaikanOpen(false);
       setKenaikanMapping({});
+      setKenaikanNewClasses({});
       fetchData();
+      fetchKelas();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
     finally { setKenaikanLoading(false); }
   };
@@ -673,7 +713,7 @@ export function SiswaPage() {
       </Dialog>
 
       {/* Kenaikan Kelas - Mapping Dialog */}
-      <Dialog open={kenaikanOpen} onOpenChange={(open) => { setKenaikanOpen(open); if (!open) setKenaikanMapping({}); }}>
+      <Dialog open={kenaikanOpen} onOpenChange={(open) => { setKenaikanOpen(open); if (!open) { setKenaikanMapping({}); setKenaikanNewClasses({}); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Kenaikan Kelas Massal</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground mb-2">Pilih kelas tujuan untuk setiap kelas saat ini:</p>
@@ -691,44 +731,69 @@ export function SiswaPage() {
               </div>
             </div>
           </div>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="space-y-2 max-h-72 overflow-y-auto">
             {kelasList.map((k: any) => {
               const siswaCount = data.filter((s: any) => s.kelas_id === k.id).length;
+              const isCreatingNew = kenaikanMapping[k.id] === '__new__';
               return (
-                <div key={k.id} className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{k.nama_kelas}</span>
-                      <span className="text-xs text-muted-foreground">({siswaCount} siswa)</span>
+                <div key={k.id}>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{k.nama_kelas}</span>
+                        <span className="text-xs text-muted-foreground">({siswaCount} siswa)</span>
+                      </div>
                     </div>
+                    <span className="text-muted-foreground shrink-0">→</span>
+                    <Select value={kenaikanMapping[k.id] || ''} onValueChange={(v) => {
+                      if (v === '__none__') {
+                        setKenaikanMapping(prev => { const next = { ...prev }; delete next[k.id]; return next; });
+                        setKenaikanNewClasses(prev => { const next = { ...prev }; delete next[k.id]; return next; });
+                      } else {
+                        setKenaikanMapping(prev => ({ ...prev, [k.id]: v }));
+                        if (v !== '__new__') {
+                          setKenaikanNewClasses(prev => { const next = { ...prev }; delete next[k.id]; return next; });
+                        }
+                      }
+                    }}>
+                      <SelectTrigger className="w-44 shrink-0"><SelectValue placeholder="Kelas tujuan" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">-- Tidak Dipindah --</SelectItem>
+                        <SelectItem value="__new__">➕ Kelas Baru...</SelectItem>
+                        {kelasList.filter((k2: any) => k2.id !== k.id).map((k2: any) => <SelectItem key={k2.id} value={k2.id}>{k2.nama_kelas}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <span className="text-muted-foreground shrink-0">→</span>
-                  <Select value={kenaikanMapping[k.id] || ''} onValueChange={(v) => {
-                    if (v === '__none__') {
-                      setKenaikanMapping(prev => { const next = { ...prev }; delete next[k.id]; return next; });
-                    } else {
-                      setKenaikanMapping(prev => ({ ...prev, [k.id]: v }));
-                    }
-                  }}>
-                    <SelectTrigger className="w-40 shrink-0"><SelectValue placeholder="Kelas tujuan" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">-- Tidak Dipindah --</SelectItem>
-                      {kelasList.filter((k2: any) => k2.id !== k.id).map((k2: any) => <SelectItem key={k2.id} value={k2.id}>{k2.nama_kelas}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  {isCreatingNew && (
+                    <div className="mt-1.5 ml-auto w-44">
+                      <Input
+                        placeholder="Nama kelas baru..."
+                        value={kenaikanNewClasses[k.id] || ''}
+                        onChange={(e) => setKenaikanNewClasses(prev => ({ ...prev, [k.id]: e.target.value }))}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
           {kenaikanPreview.hasValidMappings && (
-            <div className="mt-3 p-2.5 bg-ocean/5 dark:bg-sky-900/20 rounded-lg text-sm">
-              <span className="font-medium text-ocean dark:text-sky-400">{kenaikanPreview.totalAffected} siswa</span>
-              <span className="text-muted-foreground"> akan dipindahkan dari </span>
-              <span className="font-medium text-ocean dark:text-sky-400">{kenaikanPreview.validMappings.length} kelas</span>
+            <div className="mt-3 p-2.5 bg-ocean/5 dark:bg-sky-900/20 rounded-lg text-sm space-y-1">
+              <div>
+                <span className="font-medium text-ocean dark:text-sky-400">{kenaikanPreview.totalAffected} siswa</span>
+                <span className="text-muted-foreground"> akan dipindahkan dari </span>
+                <span className="font-medium text-ocean dark:text-sky-400">{kenaikanPreview.validMappings.length} kelas</span>
+              </div>
+              {kenaikanPreview.newClassNames.length > 0 && (
+                <div className="text-xs text-emerald-600 dark:text-emerald-400">
+                  ➕ Kelas baru akan dibuat: <strong>{kenaikanPreview.newClassNames.join(', ')}</strong>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setKenaikanOpen(false); setKenaikanMapping({}); }}>Batal</Button>
+            <Button variant="outline" onClick={() => { setKenaikanOpen(false); setKenaikanMapping({}); setKenaikanNewClasses({}); }}>Batal</Button>
             <Button
               onClick={() => {
                 if (!kenaikanPreview.hasValidMappings) {
@@ -760,11 +825,16 @@ export function SiswaPage() {
                 <div className="bg-muted rounded-lg p-3 space-y-1.5">
                   {kenaikanPreview.validMappings.map((m, i) => (
                     <div key={i} className="flex items-center justify-between text-sm">
-                      <span>{m.oldKelasName} → {m.newKelasName}</span>
+                      <span>{m.oldKelasName} → {m.newKelasName}{m.isNewClass && <span className="text-emerald-600 dark:text-emerald-400 text-xs ml-1">(baru)</span>}</span>
                       <span className="font-medium">{m.studentCount} siswa</span>
                     </div>
                   ))}
                 </div>
+                {kenaikanPreview.newClassNames.length > 0 && (
+                  <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg p-2.5">
+                    <p className="text-xs text-emerald-700 dark:text-emerald-300">➕ Kelas baru akan dibuat otomatis: <strong>{kenaikanPreview.newClassNames.join(', ')}</strong></p>
+                  </div>
+                )}
                 {kenaikanPreview.skipped.length > 0 && (
                   <p className="text-xs text-muted-foreground">Kelas dilewati (sama): {kenaikanPreview.skipped.join(', ')}</p>
                 )}
