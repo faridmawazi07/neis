@@ -13,7 +13,7 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Search, UserX, ArrowRightLeft, Loader2, Users, FileText, FileDown } from 'lucide-react';
+import { Plus, Edit, Search, UserX, ArrowRightLeft, Loader2, Users, FileDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePagination } from '@/hooks/use-pagination';
@@ -43,7 +43,6 @@ export function WaliKelasSiswaPage() {
   const [statusChangeId, setStatusChangeId] = useState<string | null>(null);
 
   // Export loading
-  const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
 
   // Pagination
@@ -200,43 +199,6 @@ export function WaliKelasSiswaPage() {
     }
   };
 
-  const handleExportPDF = async () => {
-    setExportingPdf(true);
-    try {
-      const { jsPDF } = await import('jspdf');
-      await import('jspdf-autotable');
-      const doc = new jsPDF();
-
-      doc.setFontSize(14);
-      doc.text(`Data Siswa - ${myKelas?.nama_kelas || 'Kelas'}`, 14, 15);
-      doc.setFontSize(10);
-      doc.text(`Wali Kelas: ${user?.nama || '-'}`, 14, 22);
-      doc.text(`Jumlah: ${totalSiswa} siswa (L: ${totalLaki}, P: ${totalPerempuan})`, 14, 28);
-      doc.text(`Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 34);
-
-      const tableData = data.map((d, i) => [
-        i + 1, d.nis, d.nisn, d.nama, d.jenis_kelamin || '-',
-        d.status === 'berhenti' ? 'Berhenti' : d.status === 'pindah' ? 'Pindah' : d.status === 'lulus' ? 'Lulus' : 'Aktif',
-      ]);
-
-      (doc as any).autoTable({
-        startY: 38,
-        head: [['No', 'NIS', 'NISN', 'Nama', 'JK', 'Status']],
-        body: tableData,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [8, 145, 178] },
-      });
-
-      doc.save(`data-siswa-${myKelas?.nama_kelas || 'kelas'}.pdf`);
-      toast({ title: 'Berhasil', description: 'File PDF berhasil diunduh' });
-    } catch (err) {
-      console.error('Export PDF error:', err);
-      toast({ title: 'Error', description: 'Gagal membuat file PDF', variant: 'destructive' });
-    } finally {
-      setExportingPdf(false);
-    }
-  };
-
   if (!myKelas && !loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -272,10 +234,6 @@ export function WaliKelasSiswaPage() {
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={exportingPdf || data.length === 0}>
-            {exportingPdf ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
-            PDF
-          </Button>
           <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exportingExcel || data.length === 0}>
             {exportingExcel ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileDown className="h-4 w-4 mr-1" />}
             Excel
