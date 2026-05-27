@@ -130,6 +130,19 @@ export async function initSchema() {
     console.log('Migration check for kelas.wali_kelas_id:', e);
   }
 
+  // Migration: remove seed user Budi Santoso (u-guru1)
+  try {
+    // First clear wali_kelas_id references
+    await turso.execute("UPDATE kelas SET wali_kelas_id = NULL WHERE wali_kelas_id = 'u-guru1'");
+    // Delete related kehadiran_mengajar photos from Cloudinary would need app-level, skip for now
+    await turso.execute("DELETE FROM kehadiran_mengajar WHERE guru_id = 'u-guru1'");
+    await turso.execute("DELETE FROM jadwal WHERE guru_id = 'u-guru1'");
+    await turso.execute("DELETE FROM users WHERE id = 'u-guru1'");
+    console.log('Migration: removed seed user Budi Santoso (u-guru1)');
+  } catch (e) {
+    console.log('Migration: remove u-guru1:', e);
+  }
+
   await turso.execute(`
     CREATE TABLE IF NOT EXISTS kehadiran_mengajar (
       id TEXT PRIMARY KEY,
@@ -175,7 +188,6 @@ export async function seedData() {
   await turso.execute(`
     INSERT INTO users (id, nip, nama, password, role, status_persetujuan, jenis_kelamin, tanggal_lahir) VALUES
     ('u-admin', 'admin', 'Administrator', '${adminPassword}', 'admin', 'approved', NULL, NULL),
-    ('u-guru1', '198501012010011001', 'Budi Santoso', '${guruPassword}', 'guru', 'approved', 'Laki-laki', '1985-01-01'),
     ('u-guru2', '198602152011012002', 'Siti Rahayu', '${guruPassword}', 'guru', 'approved', 'Perempuan', '1986-02-15'),
     ('u-pegawai1', '199003202012011001', 'Ahmad Fauzi', '${pegawaiPassword}', 'pegawai', 'approved', 'Laki-laki', '1990-03-20'),
     ('u-pimpinan1', '197505102008011001', 'Dr. Hj. Rina Susanti, M.Pd', '${pimpinanPassword}', 'pimpinan', 'approved', 'Perempuan', '1975-05-10'),
@@ -255,8 +267,8 @@ export async function seedData() {
 
   await turso.execute(`
     INSERT INTO jadwal (id, guru_id, hari_id, kelas_id, mapel_id, jam_ke, jam_mulai, jam_selesai) VALUES
-    ('j-1', 'u-guru1', '${hariId1}', 'k-1', 'm-1', 1, '07:00', '07:45'),
-    ('j-2', 'u-guru1', '${hariId1}', 'k-2', 'm-1', 2, '07:45', '08:30'),
+    ('j-1', 'u-guru2', '${hariId1}', 'k-1', 'm-1', 1, '07:00', '07:45'),
+    ('j-2', 'u-guru2', '${hariId1}', 'k-2', 'm-1', 2, '07:45', '08:30'),
     ('j-3', 'u-guru2', '${hariId1}', 'k-3', 'm-2', 3, '08:30', '09:15')
   `);
 
