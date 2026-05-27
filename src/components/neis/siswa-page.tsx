@@ -1094,12 +1094,12 @@ export function SiswaPage() {
                       </button>
                     )}
                     {showDropdown && filteredGuru.length > 0 && (
-                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-48 overflow-y-auto">
                         {filteredGuru.map((g: any) => (
                           <button
                             key={g.id}
                             type="button"
-                            className={`w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 flex items-center justify-between transition-colors ${currentWaliId === g.id ? 'bg-ocean/10 text-ocean font-medium' : ''}`}
+                            className={`w-full text-left px-3 py-2 hover:bg-accent/50 transition-colors ${currentWaliId === g.id ? 'bg-ocean/10 text-ocean font-medium' : ''}`}
                             onMouseDown={(e) => {
                               e.preventDefault(); // Prevent blur
                               setWaliKelasDraft(prev => ({ ...prev, [k.id]: g.id }));
@@ -1108,8 +1108,8 @@ export function SiswaPage() {
                             }}
                             disabled={waliLoading}
                           >
-                            <span>{g.nama}</span>
-                            {g.nip && <span className="text-xs text-muted-foreground">({g.nip})</span>}
+                            <span className="text-sm">{g.nama}</span>
+                            {g.nip && <span className="block text-xs text-muted-foreground">NIP: {g.nip}</span>}
                           </button>
                         ))}
                       </div>
