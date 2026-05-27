@@ -631,12 +631,20 @@ export function SiswaPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           {selectedIds.length > 0 && (
-            <Button variant="destructive" size="sm" onClick={() => setBulkDeleteOpen(true)}>
-              <Trash2 className="h-4 w-4 mr-1" /> Hapus ({selectedIds.length})
-            </Button>
+            <>
+              <Button variant="outline" size="sm" onClick={() => { setBulkStatusType('berhenti'); setBulkStatusOpen(true); }} className="text-amber-600 border-amber-300 hover:bg-amber-50">
+                <UserX className="h-4 w-4 mr-1" /> Berhenti ({selectedIds.length})
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => { setBulkStatusType('pindah'); setBulkStatusOpen(true); }} className="text-blue-600 border-blue-300 hover:bg-blue-50">
+                <ArrowRightLeft className="h-4 w-4 mr-1" /> Pindah ({selectedIds.length})
+              </Button>
+            </>
           )}
           <Button variant="outline" size="sm" onClick={() => setKenaikanOpen(true)}>
             <ArrowUpCircle className="h-4 w-4 mr-1" /> Kenaikan Kelas
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setKelulusanOpen(true)}>
+            <GraduationCap className="h-4 w-4 mr-1" /> Kelulusan
           </Button>
           <Button variant="outline" size="sm" onClick={() => setResetOpen(true)}>
             <RotateCcw className="h-4 w-4 mr-1" /> Reset
