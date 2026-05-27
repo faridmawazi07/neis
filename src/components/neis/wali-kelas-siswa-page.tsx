@@ -13,7 +13,7 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Search, UserX, ArrowRightLeft, Loader2, Users, FileText, FileDown } from 'lucide-react';
+import { Plus, Edit, Search, UserX, ArrowRightLeft, Loader2, Users, FileText, FileDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePagination } from '@/hooks/use-pagination';
@@ -23,13 +23,15 @@ export function WaliKelasSiswaPage() {
   const { user } = useAuthStore();
   const { toast } = useToast();
   const [data, setData] = useState<any[]>([]);
+  const [allSiswa, setAllSiswa] = useState<any[]>([]); // All active siswa for counting
   const [myKelas, setMyKelas] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('aktif');
 
-  // Form
+  // Form (Add & Edit)
   const [formOpen, setFormOpen] = useState(false);
+  const [editData, setEditData] = useState<any>(null);
   const [formNis, setFormNis] = useState('');
   const [formNisn, setFormNisn] = useState('');
   const [formNama, setFormNama] = useState('');
@@ -39,6 +41,10 @@ export function WaliKelasSiswaPage() {
   // Delete → Status change
   const [statusChangeOpen, setStatusChangeOpen] = useState(false);
   const [statusChangeId, setStatusChangeId] = useState<string | null>(null);
+
+  // Export loading
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   // Pagination
   const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(data.length);
@@ -54,6 +60,17 @@ export function WaliKelasSiswaPage() {
       }
     } catch {}
   }, [user?.id]);
+
+  const fetchAllSiswa = useCallback(async () => {
+    if (!myKelas) return;
+    try {
+      const res = await fetch(`/api/siswa?kelas_id=${myKelas.id}`, { credentials: 'include' });
+      if (res.ok) {
+        const result = (await res.json()).data || [];
+        setAllSiswa(result);
+      }
+    } catch {}
+  }, [myKelas]);
 
   const fetchData = useCallback(async () => {
     if (!myKelas) { setLoading(false); return; }
@@ -86,10 +103,23 @@ export function WaliKelasSiswaPage() {
   }, [myKelas, filterStatus, search]);
 
   useEffect(() => { fetchMyKelas(); }, [fetchMyKelas]);
-  useEffect(() => { if (myKelas) fetchData(); }, [fetchData]);
+  useEffect(() => { if (myKelas) { fetchData(); fetchAllSiswa(); } }, [fetchData, fetchAllSiswa]);
+
+  // Compute stats from allSiswa
+  const totalSiswa = allSiswa.length;
+  const totalLaki = allSiswa.filter((s: any) => s.jenis_kelamin?.toLowerCase() === 'laki-laki').length;
+  const totalPerempuan = allSiswa.filter((s: any) => s.jenis_kelamin?.toLowerCase() === 'perempuan').length;
 
   const openAdd = () => {
+    setEditData(null);
     setFormNis(''); setFormNisn(''); setFormNama(''); setFormJenisKelamin('');
+    setFormOpen(true);
+  };
+
+  const openEdit = (item: any) => {
+    setEditData(item);
+    setFormNis(item.nis); setFormNisn(item.nisn); setFormNama(item.nama);
+    setFormJenisKelamin(item.jenis_kelamin || '');
     setFormOpen(true);
   };
 
@@ -100,18 +130,34 @@ export function WaliKelasSiswaPage() {
     }
     setFormLoading(true);
     try {
-      const res = await fetch('/api/siswa', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nis: formNis, nisn: formNisn, nama: formNama,
-          kelas_id: myKelas.id, jenis_kelamin: formJenisKelamin || null,
-        }),
-        credentials: 'include',
-      });
-      const result = await res.json();
-      if (!res.ok) { toast({ title: 'Gagal', description: result.error, variant: 'destructive' }); return; }
-      toast({ title: 'Berhasil', description: 'Siswa berhasil ditambahkan' });
-      setFormOpen(false); fetchData();
+      if (editData) {
+        // Edit mode
+        const res = await fetch('/api/siswa', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editData.id, nis: formNis, nisn: formNisn, nama: formNama,
+            jenis_kelamin: formJenisKelamin || null,
+          }),
+          credentials: 'include',
+        });
+        const result = await res.json();
+        if (!res.ok) { toast({ title: 'Gagal', description: result.error, variant: 'destructive' }); return; }
+        toast({ title: 'Berhasil', description: 'Siswa berhasil diperbarui' });
+      } else {
+        // Add mode
+        const res = await fetch('/api/siswa', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nis: formNis, nisn: formNisn, nama: formNama,
+            kelas_id: myKelas.id, jenis_kelamin: formJenisKelamin || null,
+          }),
+          credentials: 'include',
+        });
+        const result = await res.json();
+        if (!res.ok) { toast({ title: 'Gagal', description: result.error, variant: 'destructive' }); return; }
+        toast({ title: 'Berhasil', description: 'Siswa berhasil ditambahkan' });
+      }
+      setFormOpen(false); fetchData(); fetchAllSiswa();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
     finally { setFormLoading(false); }
   };
@@ -128,26 +174,36 @@ export function WaliKelasSiswaPage() {
       if (!res.ok) { toast({ title: 'Gagal', description: result.error, variant: 'destructive' }); return; }
       const label = newStatus === 'berhenti' ? 'berhenti' : 'pindah';
       toast({ title: 'Berhasil', description: `Siswa dinyatakan ${label}` });
-      setStatusChangeOpen(false); setStatusChangeId(null); fetchData();
+      setStatusChangeOpen(false); setStatusChangeId(null); fetchData(); fetchAllSiswa();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
   };
 
   const handleExportExcel = async () => {
-    const XLSX = await import('xlsx');
-    const wsData = [['NIS', 'NISN', 'Nama', 'Kelas', 'Jenis Kelamin', 'Status']];
-    data.forEach((d) => {
-      const statusLabel = d.status === 'berhenti' ? 'Berhenti' : d.status === 'pindah' ? 'Pindah' : d.status === 'lulus' ? 'Lulus' : 'Aktif';
-      wsData.push([d.nis, d.nisn, d.nama, d.nama_kelas || '-', d.jenis_kelamin || '', statusLabel]);
-    });
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    XLSX.utils.book_append_sheet(wb, ws, 'Siswa');
-    XLSX.writeFile(wb, `data-siswa-${myKelas?.nama_kelas || 'kelas'}.xlsx`);
+    setExportingExcel(true);
+    try {
+      const XLSX = await import('xlsx');
+      const wsData = [['NIS', 'NISN', 'Nama', 'Kelas', 'Jenis Kelamin', 'Status']];
+      data.forEach((d) => {
+        const statusLabel = d.status === 'berhenti' ? 'Berhenti' : d.status === 'pindah' ? 'Pindah' : d.status === 'lulus' ? 'Lulus' : 'Aktif';
+        wsData.push([d.nis, d.nisn, d.nama, d.nama_kelas || myKelas?.nama_kelas || '-', d.jenis_kelamin || '', statusLabel]);
+      });
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      XLSX.utils.book_append_sheet(wb, ws, 'Siswa');
+      XLSX.writeFileXLSX(wb, `data-siswa-${myKelas?.nama_kelas || 'kelas'}.xlsx`);
+      toast({ title: 'Berhasil', description: 'File Excel berhasil diunduh' });
+    } catch (err) {
+      console.error('Export Excel error:', err);
+      toast({ title: 'Error', description: 'Gagal membuat file Excel', variant: 'destructive' });
+    } finally {
+      setExportingExcel(false);
+    }
   };
 
   const handleExportPDF = async () => {
+    setExportingPdf(true);
     try {
-      const { default: jsPDF } = await import('jspdf');
+      const { jsPDF } = await import('jspdf');
       await import('jspdf-autotable');
       const doc = new jsPDF();
 
@@ -155,7 +211,8 @@ export function WaliKelasSiswaPage() {
       doc.text(`Data Siswa - ${myKelas?.nama_kelas || 'Kelas'}`, 14, 15);
       doc.setFontSize(10);
       doc.text(`Wali Kelas: ${user?.nama || '-'}`, 14, 22);
-      doc.text(`Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 28);
+      doc.text(`Jumlah: ${totalSiswa} siswa (L: ${totalLaki}, P: ${totalPerempuan})`, 14, 28);
+      doc.text(`Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 14, 34);
 
       const tableData = data.map((d, i) => [
         i + 1, d.nis, d.nisn, d.nama, d.jenis_kelamin || '-',
@@ -163,7 +220,7 @@ export function WaliKelasSiswaPage() {
       ]);
 
       (doc as any).autoTable({
-        startY: 32,
+        startY: 38,
         head: [['No', 'NIS', 'NISN', 'Nama', 'JK', 'Status']],
         body: tableData,
         styles: { fontSize: 8 },
@@ -171,8 +228,12 @@ export function WaliKelasSiswaPage() {
       });
 
       doc.save(`data-siswa-${myKelas?.nama_kelas || 'kelas'}.pdf`);
-    } catch {
-      toast({ title: 'Error', description: 'Gagal membuat PDF. Pastikan paket tersedia.', variant: 'destructive' });
+      toast({ title: 'Berhasil', description: 'File PDF berhasil diunduh' });
+    } catch (err) {
+      console.error('Export PDF error:', err);
+      toast({ title: 'Error', description: 'Gagal membuat file PDF', variant: 'destructive' });
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -191,20 +252,33 @@ export function WaliKelasSiswaPage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold">Siswa</h1>
           {myKelas && (
-            <span className="text-sm bg-ocean/10 text-ocean px-2.5 py-0.5 rounded-full font-medium">
-              {myKelas.nama_kelas}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm bg-ocean/10 text-ocean px-2.5 py-0.5 rounded-full font-medium">
+                {myKelas.nama_kelas}
+              </span>
+              <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">
+                {totalSiswa} siswa
+              </span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full text-blue-600 bg-blue-50 dark:bg-blue-950/30">
+                ♂ {totalLaki}
+              </span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full text-pink-600 bg-pink-50 dark:bg-pink-950/30">
+                ♀ {totalPerempuan}
+              </span>
+            </div>
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={handleExportPDF}>
-            <FileText className="h-4 w-4 mr-1" /> PDF
+          <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={exportingPdf || data.length === 0}>
+            {exportingPdf ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
+            PDF
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportExcel}>
-            <FileDown className="h-4 w-4 mr-1" /> Excel
+          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exportingExcel || data.length === 0}>
+            {exportingExcel ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileDown className="h-4 w-4 mr-1" />}
+            Excel
           </Button>
           <Button onClick={openAdd} size="sm" className="bg-ocean hover:bg-ocean-dark text-white">
             <Plus className="h-4 w-4 mr-1" /> Tambah
@@ -245,11 +319,16 @@ export function WaliKelasSiswaPage() {
               <TableCell>{d.jenis_kelamin || '-'}</TableCell>
               <TableCell>{statusLabel ? <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusColor}`}>{statusLabel}</span> : <span className="text-xs text-muted-foreground">Aktif</span>}</TableCell>
               <TableCell>
-                {(!d.status || d.status === 'aktif') && (
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { setStatusChangeId(d.id); setStatusChangeOpen(true); }}>
-                    <UserX className="h-3.5 w-3.5" />
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}>
+                    <Edit className="h-3.5 w-3.5" />
                   </Button>
-                )}
+                  {(!d.status || d.status === 'aktif') && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { setStatusChangeId(d.id); setStatusChangeOpen(true); }}>
+                      <UserX className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
               </TableCell>
             </TableRow>
             );
@@ -264,9 +343,9 @@ export function WaliKelasSiswaPage() {
         </>}
       </CardContent></Card>
 
-      {/* Add Form */}
+      {/* Add/Edit Form */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}><DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Tambah Siswa</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{editData ? 'Edit Siswa' : 'Tambah Siswa'}</DialogTitle></DialogHeader>
         <div className="text-sm text-muted-foreground mb-2">Kelas: <strong>{myKelas?.nama_kelas}</strong></div>
         <div className="space-y-4">
           <div className="space-y-2"><Label>NIS</Label><Input value={formNis} onChange={(e) => setFormNis(e.target.value)} placeholder="Masukkan NIS" /></div>
@@ -282,7 +361,12 @@ export function WaliKelasSiswaPage() {
             </Select>
           </div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => setFormOpen(false)}>Batal</Button><Button onClick={handleSubmit} disabled={formLoading} className="bg-ocean hover:bg-ocean-dark text-white">{formLoading ? 'Menyimpan...' : 'Simpan'}</Button></DialogFooter>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setFormOpen(false)}>Batal</Button>
+          <Button onClick={handleSubmit} disabled={formLoading} className="bg-ocean hover:bg-ocean-dark text-white">
+            {formLoading ? 'Menyimpan...' : 'Simpan'}
+          </Button>
+        </DialogFooter>
       </DialogContent></Dialog>
 
       {/* Status Change Popup */}
