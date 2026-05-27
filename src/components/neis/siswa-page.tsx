@@ -652,9 +652,6 @@ export function SiswaPage() {
               </Button>
             </>
           )}
-          <Button variant="outline" size="sm" onClick={() => setKenaikanOpen(true)}>
-            <ArrowUpCircle className="h-4 w-4 mr-1" /> Kenaikan Kelas
-          </Button>
           <Button variant="outline" size="sm" onClick={async () => {
             await fetchGuruList();
             // Initialize draft from current kelas list
@@ -664,6 +661,9 @@ export function SiswaPage() {
             setWaliKelasOpen(true);
           }}>
             <UserCheck className="h-4 w-4 mr-1" /> Wali Kelas
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setKenaikanOpen(true)}>
+            <ArrowUpCircle className="h-4 w-4 mr-1" /> Kenaikan Kelas
           </Button>
           <Button variant="outline" size="sm" onClick={() => setKelulusanOpen(true)}>
             <GraduationCap className="h-4 w-4 mr-1" /> Kelulusan
