@@ -511,6 +511,3 @@ export function WaliKelasSiswaPage() {
     </div>
   );
 }
-
-// Helper for jspdf-autotable
-function autoTable(mod: any) { /* no-op, side effect import */ }
