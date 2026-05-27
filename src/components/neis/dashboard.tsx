@@ -719,16 +719,27 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
             </PopoverContent>
           </Popover>
         )}
-        {role === 'guru' && (
-          <Button
-            size="sm"
-            className="bg-ocean hover:bg-ocean-dark text-white h-7 text-xs rounded-full px-3"
-            onClick={() => setKehadiranFormOpen(true)}
-          >
-            <PlusCircle className="h-3.5 w-3.5 mr-1" />
-            Mengajar
-          </Button>
-        )}
+        {role === 'guru' && (() => {
+          const now = new Date();
+          const jakartaOffset = 7 * 60;
+          const jakartaTime = new Date(now.getTime() + (jakartaOffset + now.getTimezoneOffset()) * 60000);
+          const dayOfWeek = jakartaTime.getDay();
+          const hours = jakartaTime.getHours();
+          const minutes = jakartaTime.getMinutes();
+          const currentTime = hours * 60 + minutes;
+          const isWorkHour = dayOfWeek !== 0 && dayOfWeek !== 6 && currentTime >= 420 && currentTime <= 1200;
+          const canMengajar = isWorkHour && !isHoliday;
+          return canMengajar ? (
+            <Button
+              size="sm"
+              className="bg-ocean hover:bg-ocean-dark text-white h-7 text-xs rounded-full px-3"
+              onClick={() => setKehadiranFormOpen(true)}
+            >
+              <PlusCircle className="h-3.5 w-3.5 mr-1" />
+              Mengajar
+            </Button>
+          ) : null;
+        })()}
       </div>
 
       {role === 'admin' && renderAdminWidgets()}
