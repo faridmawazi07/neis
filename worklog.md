@@ -193,3 +193,35 @@ Stage Summary:
 - Push now prioritized over pull when local has changes
 - All calendar fix changes verified intact and pushed to GitHub
 - Both branches (main, dev) are in sync at commit 8fd843e
+
+---
+Task ID: 6
+Agent: main
+Task: Kenaikan kelas - Add "Create New Class" option + Import pre-verification + Fix StudentAbsenceModal pre-selection
+
+Work Log:
+- Added "➕ Kelas Baru..." option in kenaikan kelas mapping dialog Select dropdown
+- When selected, shows an Input field for entering the new class name
+- Added `kenaikanNewClasses` state to track new class names per source kelas
+- Updated `kenaikanPreview` computation to handle `__new__` mapping value and detect existing class names
+- Updated confirmation dialog to show "(baru)" label for new classes and creation preview
+- Backend: Added `__new__` value handling in kenaikan-kelas API, creates kelas before updating siswa
+- Backend: Checks if new class name already exists and uses existing class instead of creating duplicate
+- Backend: Returns `createdClasses` array in response with newly created class details
+- Added `newClasses` parameter to kenaikan-kelas API request body
+- After successful kenaikan, fetches kelas list to update dropdowns
+- Added pre-verification step in import flow: calls `verify-import` API before importing
+- New `verify-import` API endpoint: checks NIS/NISN against database in bulk, returns new/duplicate/invalid items
+- Import now shows confirmation dialog with verification results before proceeding
+- Only new (non-duplicate) data is sent to `bulk-import` API
+- Changed "Duplikat" label to "Sudah Ada" in import progress UI
+- Added "Data yang sudah ada tidak ditimpa" info message in import results
+- Backend bulk-import: Updated duplicate messages to show which student uses the NIS/NISN
+- Fixed StudentAbsenceModal: Updated `syncKey` to include `kelasId` and `siswaList.length` for proper re-mount timing
+- The key now includes siswaList.length so when the list loads, the component re-mounts with correct pre-selected values
+- Lint passes cleanly
+
+Stage Summary:
+- Kenaikan kelas now supports creating new classes on-the-fly during mapping
+- Import now pre-verifies against database, skips existing data, never overwrites
+- StudentAbsenceModal now properly pre-selects previously checked students when editing kehadiran
