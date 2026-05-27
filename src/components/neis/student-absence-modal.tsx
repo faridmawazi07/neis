@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,29 +37,56 @@ export function StudentAbsenceModal({
 }: StudentAbsenceModalProps) {
   const [search, setSearch] = useState('');
 
-  // Track the last synced props to avoid re-computing when user makes changes
-  const lastSyncRef = useRef({ izinSakit: '', alfa: '' });
-
-  // Compute initial selected from props, filtering only valid IDs that exist in siswaList
+  // Filter only valid IDs that exist in siswaList
   const validSiswaIds = useMemo(() => new Set(siswaList.map(s => s.id)), [siswaList]);
+  const validInitialIzinSakit = useMemo(() => initialIzinSakit.filter(id => validSiswaIds.has(id)), [initialIzinSakit, validSiswaIds]);
+  const validInitialAlfa = useMemo(() => initialAlfa.filter(id => validSiswaIds.has(id)), [initialAlfa, validSiswaIds]);
 
-  // Use initial values directly as state initializer, re-create when props change
-  const syncKey = `${initialIzinSakit.join(',')}-${initialAlfa.join(',')}-${siswaList.length}`;
+  // Use a sync key based on props to reset state when initial values change
+  // When this key changes, the component re-mounts with fresh state
+  const syncKey = useMemo(() =>
+    `${validInitialIzinSakit.join(',')}-${validInitialAlfa.join(',')}`,
+    [validInitialIzinSakit, validInitialAlfa]
+  );
 
-  const [izinSakit, setIzinSakit] = useState<string[]>([]);
-  const [alfa, setAlfa] = useState<string[]>([]);
+  return (
+    <StudentAbsenceModalInner
+      key={syncKey}
+      open={open}
+      onClose={onClose}
+      siswaList={siswaList}
+      initialIzinSakit={validInitialIzinSakit}
+      initialAlfa={validInitialAlfa}
+      onSave={onSave}
+      search={search}
+      setSearch={setSearch}
+    />
+  );
+}
 
-  // Only sync from props when they change (not on every render)
-  // We use a ref to track if we need to sync
-  const currentSyncKey = `${initialIzinSakit.join(',')}-${initialAlfa.join(',')}`;
-  if (lastSyncRef.current.izinSakit !== currentSyncKey && siswaList.length > 0) {
-    lastSyncRef.current.izinSakit = currentSyncKey;
-    const validIzinSakit = initialIzinSakit.filter(id => validSiswaIds.has(id));
-    const validAlfa = initialAlfa.filter(id => validSiswaIds.has(id));
-    // Use functional update to avoid stale closure
-    setIzinSakit(validIzinSakit);
-    setAlfa(validAlfa);
-  }
+// Inner component that holds the mutable state
+function StudentAbsenceModalInner({
+  open,
+  onClose,
+  siswaList,
+  initialIzinSakit,
+  initialAlfa,
+  onSave,
+  search,
+  setSearch,
+}: {
+  open: boolean;
+  onClose: () => void;
+  siswaList: Siswa[];
+  initialIzinSakit: string[];
+  initialAlfa: string[];
+  onSave: (izinSakit: string[], alfa: string[]) => void;
+  search: string;
+  setSearch: (s: string) => void;
+}) {
+  // State initialized from props (only on mount, which is controlled by key)
+  const [izinSakit, setIzinSakit] = useState<string[]>(() => [...initialIzinSakit]);
+  const [alfa, setAlfa] = useState<string[]>(() => [...initialAlfa]);
 
   const filteredSiswa = siswaList.filter(
     (s) =>
