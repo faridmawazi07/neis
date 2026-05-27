@@ -149,10 +149,8 @@ export function SiswaPage() {
           if (['berhenti', 'pindah', 'lulus'].includes(editData.status)) {
             updateBody.status = 'aktif';
           }
-        } else if (isNonActive) {
-          // Keep status but no class
-          updateBody.kelas_id = null;
         }
+        // If non-active student and no class selected, keep their existing kelas_id
         const res = await fetch('/api/siswa', {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updateBody),

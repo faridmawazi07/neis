@@ -20,8 +20,8 @@ export async function GET(req: NextRequest) {
     const args: string[] = [];
 
     if (status && ['berhenti', 'pindah', 'lulus'].includes(status)) {
-      // Non-active students: kelas_id is NULL, show status
-      sql = `SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, s.status, NULL as nama_kelas FROM siswa s WHERE s.status = ?`;
+      // Non-active students: show status, still have kelas_id for record
+      sql = `SELECT s.id, s.nis, s.nisn, s.nama, s.kelas_id, s.jenis_kelamin, s.status, k.nama_kelas FROM siswa s LEFT JOIN kelas k ON s.kelas_id = k.id WHERE s.status = ?`;
       args.push(status);
       sql += ` ORDER BY s.nama`;
     } else if (kelas_id) {
@@ -91,9 +91,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Tidak ada siswa aktif di kelas yang dipilih' }, { status: 400 });
       }
 
-      // Update status to 'lulus' and remove from class
+      // Update status to 'lulus', keep kelas_id for record
       const batchStmts = validKelasIds.map((kid: string) => ({
-        sql: "UPDATE siswa SET status = 'lulus', kelas_id = NULL WHERE kelas_id = ? AND (status = 'aktif' OR status IS NULL)",
+        sql: "UPDATE siswa SET status = 'lulus' WHERE kelas_id = ? AND (status = 'aktif' OR status IS NULL)",
         args: [kid],
       }));
 
@@ -132,10 +132,10 @@ export async function POST(req: NextRequest) {
           totalUpdated += result.rowsAffected;
         }
       } else {
-        // Deactivating: set status and remove from class
+        // Deactivating: set status, keep kelas_id for record
         for (const sid of ids) {
           const result = await turso.execute({
-            sql: `UPDATE siswa SET status = ?, kelas_id = NULL WHERE id = ? AND (status = 'aktif' OR status IS NULL)`,
+            sql: `UPDATE siswa SET status = ? WHERE id = ? AND (status = 'aktif' OR status IS NULL)`,
             args: [newStatus, sid],
           });
           totalUpdated += result.rowsAffected;
@@ -583,9 +583,8 @@ export async function PUT(req: NextRequest) {
 
     if (kelas_id !== undefined) {
       if (kelas_id === null || kelas_id === '') {
-        // Allow setting kelas_id to null (for status changes)
-        updates.push('kelas_id = ?');
-        args.push(null);
+        // Skip kelas_id update - keep existing value (NOT NULL constraint)
+        // kelas_id can only be changed to another valid class
       } else {
         // Check if kelas exists
         const kelasCheck = await turso.execute({

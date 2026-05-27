@@ -99,7 +99,7 @@ export async function initSchema() {
       nis TEXT UNIQUE,
       nisn TEXT UNIQUE,
       nama TEXT NOT NULL,
-      kelas_id TEXT DEFAULT NULL,
+      kelas_id TEXT NOT NULL,
       jenis_kelamin TEXT DEFAULT NULL,
       status TEXT DEFAULT 'aktif',
       FOREIGN KEY (kelas_id) REFERENCES kelas(id)
