@@ -875,6 +875,19 @@ export function SiswaPage() {
             {kelasList.map((k: any) => {
               const siswaCount = data.filter((s: any) => s.kelas_id === k.id).length;
               const isCreatingNew = kenaikanMapping[k.id] === '__new__';
+              // Extract grade number from class name (e.g., "10 TO" → 10, "11 TKJ" → 11)
+              const sourceGrade = parseInt(k.nama_kelas.trim(), 10);
+              const nextGrade = !isNaN(sourceGrade) ? sourceGrade + 1 : null;
+              // Only show classes with the next grade level in the dropdown
+              const nextGradeClasses = kelasList.filter((k2: any) => {
+                if (k2.id === k.id) return false; // skip self
+                if (nextGrade !== null) {
+                  const targetGrade = parseInt(k2.nama_kelas.trim(), 10);
+                  return targetGrade === nextGrade;
+                }
+                return true; // fallback: show all if can't parse grade
+              });
+              const isHighestGrade = nextGrade !== null && nextGradeClasses.length === 0;
               return (
                 <div key={k.id}>
                   <div className="flex items-center gap-2">
@@ -896,11 +909,11 @@ export function SiswaPage() {
                         }
                       }
                     }}>
-                      <SelectTrigger className="w-44 shrink-0"><SelectValue placeholder="Kelas tujuan" /></SelectTrigger>
+                      <SelectTrigger className="w-44 shrink-0"><SelectValue placeholder={isHighestGrade ? 'Hanya kelas baru' : 'Kelas tujuan'} /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">-- Tidak Dipindah --</SelectItem>
                         <SelectItem value="__new__">➕ Kelas Baru...</SelectItem>
-                        {kelasList.filter((k2: any) => k2.id !== k.id).map((k2: any) => <SelectItem key={k2.id} value={k2.id}>{k2.nama_kelas}</SelectItem>)}
+                        {nextGradeClasses.map((k2: any) => <SelectItem key={k2.id} value={k2.id}>{k2.nama_kelas}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
