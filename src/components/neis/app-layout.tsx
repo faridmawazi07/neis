@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '@/stores/auth-store';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';
@@ -18,7 +18,6 @@ import {
   Sun,
   LogOut,
   ChevronDown,
-  ChevronRight,
   Calendar,
   BookOpen,
   GraduationCap,
@@ -26,6 +25,7 @@ import {
   AlertCircle,
   CalendarDays,
   Eye,
+  UserCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -62,46 +62,54 @@ interface AppLayoutProps {
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-const menuItems = {
-  admin: [
-    { id: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'kehadiran' as PageName, label: 'Kehadiran', icon: ClipboardList },
-    {
-      label: 'Manajemen Data',
-      icon: Database,
-      children: [
-        { id: 'hari' as PageName, label: 'Hari', icon: Calendar },
-        { id: 'kelas' as PageName, label: 'Kelas', icon: GraduationCap },
-        { id: 'mapel' as PageName, label: 'Mapel', icon: BookOpen },
-        { id: 'status-kehadiran' as PageName, label: 'Status Kehadiran', icon: AlertCircle },
-        { id: 'hari-libur' as PageName, label: 'Hari Libur', icon: CalendarDays },
-        { id: 'jadwal' as PageName, label: 'Jadwal', icon: Clock },
-        { id: 'siswa' as PageName, label: 'Siswa', icon: Users },
-      ],
-    },
-    { id: 'data-pegawai' as PageName, label: 'Data Pegawai', icon: Users },
-    { id: 'backup-restore' as PageName, label: 'Backup/Restore/Reset', icon: HardDrive },
-    // Git Control hanya tampil di development (lokal), disembunyikan di production (deploy)
-    ...(isProduction ? [] : [{ id: 'git-control' as PageName, label: 'Git Control', icon: GitBranch }]),
-    { id: 'profile' as PageName, label: 'Profile', icon: User },
-  ],
-  guru: [
+// Base menu items per role (without dynamic items)
+const getBaseMenuItems = (role: string, isWaliKelas: boolean) => {
+  const guruMenu = [
     { id: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard },
     { id: 'jadwal' as PageName, label: 'Jadwal', icon: Clock },
     { id: 'kehadiran' as PageName, label: 'Kehadiran', icon: ClipboardList },
+    // Siswa menu only for guru who is wali kelas
+    ...(isWaliKelas ? [{ id: 'siswa' as PageName, label: 'Siswa', icon: Users }] : []),
     { id: 'profile' as PageName, label: 'Profile', icon: User },
-  ],
-  pegawai: [
-    { id: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'kehadiran' as PageName, label: 'Kehadiran', icon: ClipboardList },
-    { id: 'siswa' as PageName, label: 'Siswa', icon: Users },
-    { id: 'profile' as PageName, label: 'Profile', icon: User },
-  ],
-  pimpinan: [
-    { id: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'kehadiran' as PageName, label: 'Kehadiran', icon: ClipboardList },
-    { id: 'profile' as PageName, label: 'Profile', icon: User },
-  ],
+  ];
+
+  const menus: Record<string, any[]> = {
+    admin: [
+      { id: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'kehadiran' as PageName, label: 'Kehadiran', icon: ClipboardList },
+      {
+        label: 'Manajemen Data',
+        icon: Database,
+        children: [
+          { id: 'hari' as PageName, label: 'Hari', icon: Calendar },
+          { id: 'kelas' as PageName, label: 'Kelas', icon: GraduationCap },
+          { id: 'mapel' as PageName, label: 'Mapel', icon: BookOpen },
+          { id: 'status-kehadiran' as PageName, label: 'Status Kehadiran', icon: AlertCircle },
+          { id: 'hari-libur' as PageName, label: 'Hari Libur', icon: CalendarDays },
+          { id: 'jadwal' as PageName, label: 'Jadwal', icon: Clock },
+          { id: 'siswa' as PageName, label: 'Siswa', icon: Users },
+        ],
+      },
+      { id: 'data-pegawai' as PageName, label: 'Data Pegawai', icon: Users },
+      { id: 'backup-restore' as PageName, label: 'Backup/Restore/Reset', icon: HardDrive },
+      ...(isProduction ? [] : [{ id: 'git-control' as PageName, label: 'Git Control', icon: GitBranch }]),
+      { id: 'profile' as PageName, label: 'Profile', icon: User },
+    ],
+    guru: guruMenu,
+    pegawai: [
+      { id: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'kehadiran' as PageName, label: 'Kehadiran', icon: ClipboardList },
+      { id: 'siswa' as PageName, label: 'Siswa', icon: Users },
+      { id: 'profile' as PageName, label: 'Profile', icon: User },
+    ],
+    pimpinan: [
+      { id: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'kehadiran' as PageName, label: 'Kehadiran', icon: ClipboardList },
+      { id: 'profile' as PageName, label: 'Profile', icon: User },
+    ],
+  };
+
+  return menus[role] || menus.guru;
 };
 
 export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) {
@@ -109,12 +117,28 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
   const { theme, setTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
+  const [isWaliKelas, setIsWaliKelas] = useState(false);
 
   // Image preview modal
   const [imageOpen, setImageOpen] = useState(false);
 
   const role = user?.role || 'guru';
-  const items = menuItems[role as keyof typeof menuItems] || menuItems.guru;
+
+  // Check if guru is wali kelas
+  useEffect(() => {
+    if (role === 'guru' && user?.id) {
+      fetch(`/api/kelas?action=my-kelas&guru_id=${user.id}`, { credentials: 'include' })
+        .then(res => res.json())
+        .then(result => {
+          setIsWaliKelas(!!result.data);
+        })
+        .catch(() => setIsWaliKelas(false));
+    } else {
+      setIsWaliKelas(false);
+    }
+  }, [role, user?.id]);
+
+  const items = useMemo(() => getBaseMenuItems(role, isWaliKelas), [role, isWaliKelas]);
 
   const handleNavigate = (page: PageName) => {
     onNavigate(page);
@@ -170,7 +194,7 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
 
         <ScrollArea className="flex-1 py-3">
           <nav className="px-3 space-y-1">
-            {items.map((item) => {
+            {items.map((item: any) => {
               if ('children' in item && item.children) {
                 return (
                   <Collapsible
@@ -190,7 +214,7 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
                       </button>
                     </CollapsibleTrigger>
                     <CollapsibleContent className="ml-4 mt-1 space-y-0.5">
-                      {item.children.map((child) => (
+                      {item.children.map((child: any) => (
                         <button
                           key={child.id}
                           onClick={() => handleNavigate(child.id)}
@@ -221,6 +245,9 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <span>{item.label}</span>
+                  {role === 'guru' && item.id === 'siswa' && isWaliKelas && (
+                    <UserCheck className="h-3 w-3 text-ocean dark:text-sky-400 ml-auto" />
+                  )}
                 </button>
               );
             })}
@@ -263,7 +290,7 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
                   </Avatar>
                   <div className="hidden sm:block text-left">
                     <p className="text-sm font-medium leading-tight">{user?.nama}</p>
-                    <p className="text-[10px] text-muted-foreground capitalize">{user?.role}</p>
+                    <p className="text-[10px] text-muted-foreground capitalize">{user?.role}{isWaliKelas && role === 'guru' ? ' / Wali Kelas' : ''}</p>
                   </div>
                   <ChevronDown className="h-3 w-3 text-muted-foreground hidden sm:block" />
                 </button>
