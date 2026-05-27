@@ -57,26 +57,108 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Semua data siswa berhasil dihapus' });
     }
 
-    // Kenaikan kelas - bulk update
+    // Kenaikan kelas - bulk update with transaction and validation
     if (action === 'kenaikan-kelas') {
       const { mapping } = await req.json();
       if (!mapping || typeof mapping !== 'object') {
         return NextResponse.json({ error: 'Mapping kelas wajib diisi' }, { status: 400 });
       }
 
-      let totalUpdated = 0;
+      // Validate mapping and filter out self-mapping
+      const validEntries: [string, string][] = [];
+      const errors: string[] = [];
+      const skippedSelf: string[] = [];
+
       for (const [oldKelasId, newKelasId] of Object.entries(mapping)) {
         if (typeof newKelasId !== 'string') continue;
-        const result = await turso.execute({
-          sql: 'UPDATE siswa SET kelas_id = ? WHERE kelas_id = ?',
-          args: [newKelasId as string, oldKelasId],
+        if (!newKelasId.trim()) continue;
+
+        // Skip self-mapping
+        if (oldKelasId === newKelasId) {
+          // Get class name for the log
+          const oldKelas = await turso.execute({ sql: 'SELECT nama_kelas FROM kelas WHERE id = ?', args: [oldKelasId] });
+          const namaKelas = (oldKelas.rows[0]?.nama_kelas as string) || oldKelasId;
+          skippedSelf.push(namaKelas);
+          continue;
+        }
+
+        // Validate destination class exists
+        const newKelasCheck = await turso.execute({
+          sql: 'SELECT id, nama_kelas FROM kelas WHERE id = ?',
+          args: [newKelasId],
         });
-        totalUpdated += result.rowsAffected;
+        if (newKelasCheck.rows.length === 0) {
+          errors.push(`Kelas tujuan dengan ID ${newKelasId} tidak ditemukan`);
+          continue;
+        }
+
+        // Validate source class exists and has students
+        const oldKelasCheck = await turso.execute({
+          sql: 'SELECT id, nama_kelas FROM kelas WHERE id = ?',
+          args: [oldKelasId],
+        });
+        if (oldKelasCheck.rows.length === 0) {
+          errors.push(`Kelas asal dengan ID ${oldKelasId} tidak ditemukan`);
+          continue;
+        }
+
+        validEntries.push([oldKelasId, newKelasId]);
+      }
+
+      if (validEntries.length === 0) {
+        return NextResponse.json({
+          error: skippedSelf.length > 0
+            ? 'Tidak ada perubahan kelas. Semua kelas dipetakan ke dirinya sendiri.'
+            : (errors.length > 0 ? errors.join('; ') : 'Tidak ada mapping kelas yang valid'),
+        }, { status: 400 });
+      }
+
+      // Get student counts before update for detailed result
+      const classDetails: { oldKelasId: string; oldKelasName: string; newKelasId: string; newKelasName: string; studentCount: number }[] = [];
+      for (const [oldKelasId, newKelasId] of validEntries) {
+        const oldKelas = await turso.execute({ sql: 'SELECT nama_kelas FROM kelas WHERE id = ?', args: [oldKelasId] });
+        const newKelas = await turso.execute({ sql: 'SELECT nama_kelas FROM kelas WHERE id = ?', args: [newKelasId] });
+        const countResult = await turso.execute({ sql: 'SELECT COUNT(*) as count FROM siswa WHERE kelas_id = ?', args: [oldKelasId] });
+        classDetails.push({
+          oldKelasId,
+          oldKelasName: (oldKelas.rows[0]?.nama_kelas as string) || oldKelasId,
+          newKelasId,
+          newKelasName: (newKelas.rows[0]?.nama_kelas as string) || newKelasId,
+          studentCount: Number(countResult.rows[0]?.count) || 0,
+        });
+      }
+
+      // Execute all updates in a batch transaction
+      const batchStmts = validEntries.map(([oldKelasId, newKelasId]) => ({
+        sql: 'UPDATE siswa SET kelas_id = ? WHERE kelas_id = ?',
+        args: [newKelasId, oldKelasId],
+      }));
+
+      try {
+        await turso.batch(batchStmts, 'write');
+      } catch (batchError: any) {
+        console.error('Kenaikan kelas batch error:', batchError);
+        return NextResponse.json({ error: 'Gagal memproses kenaikan kelas. Semua perubahan dibatalkan.' }, { status: 500 });
+      }
+
+      const totalUpdated = classDetails.reduce((sum, d) => sum + d.studentCount, 0);
+      const warnings: string[] = [];
+      if (skippedSelf.length > 0) {
+        warnings.push(`Kelas dilewati (mapping ke diri sendiri): ${skippedSelf.join(', ')}`);
+      }
+      if (errors.length > 0) {
+        warnings.push(...errors);
       }
 
       return NextResponse.json({
         message: `Kenaikan kelas berhasil. ${totalUpdated} siswa diperbarui.`,
         totalUpdated,
+        details: classDetails.map(d => ({
+          from: d.oldKelasName,
+          to: d.newKelasName,
+          count: d.studentCount,
+        })),
+        warnings: warnings.length > 0 ? warnings : undefined,
       });
     }
 
