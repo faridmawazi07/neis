@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
       j.jam_ke,
       j.jam_mulai,
       j.jam_selesai,
+      j.kelas_id,
       h.nama_hari,
       k.nama_kelas,
       m.nama_mapel,

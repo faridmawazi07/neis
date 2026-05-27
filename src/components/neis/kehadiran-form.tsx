@@ -67,7 +67,17 @@ export function KehadiranForm({ open, onClose, onSuccess, editData }: KehadiranF
   const todayDayName = dayNames[today.getDay()];
   const todayStr = format(today, 'yyyy-MM-dd');
 
-  const selectedJadwal = jadwalList.find((j) => j.id === selectedJadwalId);
+  // Find selected jadwal, with fallback to editData for display fields
+  const jadwalFromList = jadwalList.find((j) => j.id === selectedJadwalId);
+  const selectedJadwal = jadwalFromList || (editData ? {
+    id: editData.jadwal_id,
+    kelas_id: editData.kelas_id,
+    nama_kelas: editData.nama_kelas,
+    nama_mapel: editData.nama_mapel,
+    jam_ke: editData.jam_ke,
+    jam_mulai: editData.jam_mulai,
+    jam_selesai: editData.jam_selesai,
+  } : undefined);
 
   const fetchData = useCallback(async () => {
     try {
