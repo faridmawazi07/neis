@@ -41,12 +41,10 @@ export function SiswaPage() {
   const [formLoading, setFormLoading] = useState(false);
 
   // Delete → Status change
-  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [statusChangeOpen, setStatusChangeOpen] = useState(false);
   const [statusChangeId, setStatusChangeId] = useState<string | null>(null);
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
   const [bulkStatusType, setBulkStatusType] = useState<'berhenti' | 'pindah'>('berhenti');
-  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
 
   // Kelulusan
@@ -340,9 +338,10 @@ export function SiswaPage() {
 
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
-    const wsData = [['NIS', 'NISN', 'Nama', 'Kelas', 'Jenis Kelamin']];
+    const wsData = [['NIS', 'NISN', 'Nama', 'Kelas', 'Jenis Kelamin', 'Status']];
     data.forEach((d) => {
-      wsData.push([d.nis, d.nisn, d.nama, d.nama_kelas, d.jenis_kelamin || '']);
+      const statusLabel = d.status === 'berhenti' ? 'Berhenti' : d.status === 'pindah' ? 'Pindah' : d.status === 'lulus' ? 'Lulus' : 'Aktif';
+      wsData.push([d.nis, d.nisn, d.nama, d.nama_kelas || '-', d.jenis_kelamin || '', statusLabel]);
     });
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -727,11 +726,16 @@ export function SiswaPage() {
       {/* Add/Edit Form */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}><DialogContent className="max-w-md">
         <DialogHeader><DialogTitle>{editData ? 'Edit Siswa' : 'Tambah Siswa'}</DialogTitle></DialogHeader>
+        {editData && ['berhenti', 'pindah', 'lulus'].includes(editData.status) && (
+          <div className={`p-2.5 rounded-lg text-xs ${editData.status === 'berhenti' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800' : editData.status === 'pindah' ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800' : 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800'}`}>
+            Status siswa: <strong>{editData.status === 'berhenti' ? 'Berhenti' : editData.status === 'pindah' ? 'Pindah' : 'Lulus'}</strong>. Pilih kelas untuk mengaktifkan kembali.
+          </div>
+        )}
         <div className="space-y-4">
           <div className="space-y-2"><Label>NIS</Label><Input value={formNis} onChange={(e) => setFormNis(e.target.value)} placeholder="Masukkan NIS" /></div>
           <div className="space-y-2"><Label>NISN</Label><Input value={formNisn} onChange={(e) => setFormNisn(e.target.value)} placeholder="Masukkan NISN" /></div>
           <div className="space-y-2"><Label>Nama</Label><Input value={formNama} onChange={(e) => setFormNama(e.target.value)} placeholder="Masukkan nama" /></div>
-          <div className="space-y-2"><Label>Kelas</Label>
+          <div className="space-y-2"><Label>Kelas{editData && ['berhenti', 'pindah', 'lulus'].includes(editData.status) && ' (opsional - isi untuk mengaktifkan kembali)'}</Label>
             <Select value={formKelasId} onValueChange={setFormKelasId}>
               <SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger>
               <SelectContent>{kelasList.map((k: any) => <SelectItem key={k.id} value={k.id}>{k.nama_kelas}</SelectItem>)}</SelectContent>
@@ -750,16 +754,34 @@ export function SiswaPage() {
         <DialogFooter><Button variant="outline" onClick={() => setFormOpen(false)}>Batal</Button><Button onClick={handleSubmit} disabled={formLoading} className="bg-ocean hover:bg-ocean-dark text-white">{formLoading ? 'Menyimpan...' : 'Simpan'}</Button></DialogFooter>
       </DialogContent></Dialog>
 
-      {/* Single Delete */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}><AlertDialogContent>
-        <AlertDialogHeader><AlertDialogTitle>Hapus Siswa?</AlertDialogTitle><AlertDialogDescription>Data yang dihapus tidak dapat dikembalikan.</AlertDialogDescription></AlertDialogHeader>
-        <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete()} className="bg-destructive text-destructive-foreground">Hapus</AlertDialogAction></AlertDialogFooter>
+      {/* Status Change - Single Student */}
+      <AlertDialog open={statusChangeOpen} onOpenChange={(open) => { setStatusChangeOpen(open); if (!open) setStatusChangeId(null); }}><AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-destructive" />Ubah Status Siswa</AlertDialogTitle>
+          <AlertDialogDescription>Pilih status untuk siswa ini. Data siswa tidak akan dihapus, hanya statusnya yang berubah. Siswa akan keluar dari kelas.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+          <AlertDialogCancel>Batal</AlertDialogCancel>
+          <AlertDialogAction onClick={() => handleStatusChange('berhenti')} className="bg-amber-600 hover:bg-amber-700 text-white">
+            <UserX className="h-4 w-4 mr-1.5" /> Berhenti
+          </AlertDialogAction>
+          <AlertDialogAction onClick={() => handleStatusChange('pindah')} className="bg-blue-600 hover:bg-blue-700 text-white">
+            <ArrowRightLeft className="h-4 w-4 mr-1.5" /> Pindah
+          </AlertDialogAction>
+        </AlertDialogFooter>
       </AlertDialogContent></AlertDialog>
 
-      {/* Bulk Delete */}
-      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}><AlertDialogContent>
-        <AlertDialogHeader><AlertDialogTitle>Hapus {selectedIds.length} siswa?</AlertDialogTitle><AlertDialogDescription>Semua siswa yang dipilih akan dihapus.</AlertDialogDescription></AlertDialogHeader>
-        <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground">Hapus</AlertDialogAction></AlertDialogFooter>
+      {/* Bulk Status Change */}
+      <AlertDialog open={bulkStatusOpen} onOpenChange={setBulkStatusOpen}><AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Ubah Status {selectedIds.length} Siswa?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {bulkStatusType === 'berhenti' ? 'Siswa akan dinyatakan berhenti dan keluar dari kelas.' : 'Siswa akan dinyatakan pindah dan keluar dari kelas.'} Data siswa tidak dihapus dan bisa diaktifkan kembali melalui edit.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel>Batal</AlertDialogCancel><AlertDialogAction onClick={handleBulkStatusChange} className={bulkStatusType === 'berhenti' ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}>
+          {bulkStatusType === 'berhenti' ? <><UserX className="h-4 w-4 mr-1.5" /> Ya, Berhenti</> : <><ArrowRightLeft className="h-4 w-4 mr-1.5" /> Ya, Pindah</>}
+        </AlertDialogAction></AlertDialogFooter>
       </AlertDialogContent></AlertDialog>
 
       {/* Reset */}
@@ -918,6 +940,102 @@ export function SiswaPage() {
             <AlertDialogCancel onClick={() => { setImportConfirmOpen(false); setImportDone(true); }}>Batal</AlertDialogCancel>
             <AlertDialogAction onClick={executeImport} className="bg-ocean hover:bg-ocean-dark text-white">
               Import {importVerifyResult?.newCount || 0} Data Baru
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Kelulusan - Class Selection Dialog */}
+      <Dialog open={kelulusanOpen} onOpenChange={(open) => { setKelulusanOpen(open); if (!open) setKelulusanSelected([]); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><GraduationCap className="h-5 w-5" />Kelulusan Siswa</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground mb-2">Pilih kelas yang akan diluluskan:</p>
+          <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3 mb-3">
+            <div className="flex items-start gap-2">
+              <GraduationCap className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-green-700 dark:text-green-300 space-y-1">
+                <p className="font-medium">Informasi:</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  <li>Semua siswa di kelas yang dipilih akan dinyatakan lulus</li>
+                  <li>Siswa yang lulus akan keluar dari kelas</li>
+                  <li>Status siswa berubah menjadi "Lulus"</li>
+                  <li>Tindakan ini tidak dapat dibatalkan</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {kelasList.map((k: any) => {
+              const siswaCount = data.filter((s: any) => s.kelas_id === k.id).length;
+              const isSelected = kelulusanSelected.includes(k.id);
+              return (
+                <div key={k.id} className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${isSelected ? 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-700' : 'hover:bg-accent/50 border-transparent'}`}
+                  onClick={() => setKelulusanSelected(prev => isSelected ? prev.filter(id => id !== k.id) : [...prev, k.id])}>
+                  <Checkbox checked={isSelected} onCheckedChange={() => setKelulusanSelected(prev => isSelected ? prev.filter(id => id !== k.id) : [...prev, k.id])} />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium">{k.nama_kelas}</span>
+                    <span className="text-xs text-muted-foreground ml-2">({siswaCount} siswa)</span>
+                  </div>
+                  {isSelected && <BadgeCheck className="h-4 w-4 text-green-600" />}
+                </div>
+              );
+            })}
+          </div>
+          {kelulusanSelected.length > 0 && (
+            <div className="mt-3 p-2.5 bg-green-50 dark:bg-green-950/20 rounded-lg text-sm">
+              <span className="font-medium text-green-700 dark:text-green-400">{kelulusanSelected.length} kelas</span>
+              <span className="text-muted-foreground"> akan diluluskan</span>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setKelulusanOpen(false); setKelulusanSelected([]); }}>Batal</Button>
+            <Button
+              onClick={() => {
+                if (kelulusanSelected.length === 0) {
+                  toast({ title: 'Perhatian', description: 'Pilih kelas yang akan diluluskan', variant: 'destructive' });
+                  return;
+                }
+                setKelulusanConfirmOpen(true);
+              }}
+              disabled={kelulusanSelected.length === 0}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              <GraduationCap className="h-4 w-4 mr-1" /> Proses Kelulusan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Kelulusan - Confirmation Dialog */}
+      <AlertDialog open={kelulusanConfirmOpen} onOpenChange={setKelulusanConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <GraduationCap className="h-5 w-5 text-green-600" />
+              Konfirmasi Kelulusan
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>Anda akan meluluskan semua siswa dari <strong>{kelulusanSelected.length} kelas</strong>. Tindakan ini tidak dapat dibatalkan!</p>
+                <div className="bg-muted rounded-lg p-3 space-y-1.5">
+                  {kelulusanSelected.map((kid) => {
+                    const kelas = kelasList.find((k: any) => k.id === kid);
+                    const count = data.filter((s: any) => s.kelas_id === kid).length;
+                    return kelas ? (
+                      <div key={kid} className="flex items-center justify-between text-sm">
+                        <span>{kelas.nama_kelas}</span>
+                        <span className="font-medium">{count} siswa</span>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={kelulusanLoading}>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={handleKelulusan} disabled={kelulusanLoading} className="bg-green-600 hover:bg-green-700 text-white">
+              {kelulusanLoading ? 'Memproses...' : 'Ya, Proses Kelulusan'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
