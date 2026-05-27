@@ -327,9 +327,6 @@ export function WaliKelasSiswaPage() {
     }
   };
 
-  // Count stats
-  const totalAktif = data.filter((s: any) => !s.status || s.status === 'aktif').length;
-
   if (!myKelas && !loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
