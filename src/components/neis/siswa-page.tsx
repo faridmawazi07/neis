@@ -668,12 +668,15 @@ export function SiswaPage() {
           <Input placeholder="Cari siswa..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
         </div>
         <Select value={filterKelasId} onValueChange={setFilterKelasId}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Filter kelas" /></SelectTrigger>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Filter siswa" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Semua Kelas</SelectItem>
             {kelasList.map((k: any) => (
               <SelectItem key={k.id} value={k.id}>{k.nama_kelas}</SelectItem>
             ))}
+            <SelectItem value="berhenti">🟡 Berhenti</SelectItem>
+            <SelectItem value="pindah">🔵 Pindah</SelectItem>
+            <SelectItem value="lulus">🟢 Lulus</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -685,20 +688,27 @@ export function SiswaPage() {
         <div className="overflow-x-auto"><Table>
           <TableHeader><TableRow>
             <TableHead className="w-10"><Checkbox checked={currentData.length > 0 && currentData.every((d: any) => selectedIds.includes(d.id))} onCheckedChange={toggleAll} /></TableHead>
-            <TableHead>NIS</TableHead><TableHead>NISN</TableHead><TableHead>Nama</TableHead><TableHead>Kelas</TableHead><TableHead>JK</TableHead><TableHead>Aksi</TableHead>
+            <TableHead>NIS</TableHead><TableHead>NISN</TableHead><TableHead>Nama</TableHead><TableHead>Kelas</TableHead><TableHead>JK</TableHead><TableHead>Status</TableHead><TableHead>Aksi</TableHead>
           </TableRow></TableHeader>
-          <TableBody>{currentData.map((d: any) => (
+          <TableBody>{currentData.map((d: any) => {
+            const statusLabel = d.status === 'berhenti' ? 'Berhenti' : d.status === 'pindah' ? 'Pindah' : d.status === 'lulus' ? 'Lulus' : '';
+            const statusColor = d.status === 'berhenti' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' : d.status === 'pindah' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' : d.status === 'lulus' ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' : '';
+            return (
             <TableRow key={d.id}>
               <TableCell><Checkbox checked={selectedIds.includes(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
               <TableCell>{d.nis}</TableCell><TableCell>{d.nisn}</TableCell>
-              <TableCell>{d.nama}</TableCell><TableCell>{d.nama_kelas}</TableCell>
+              <TableCell>{d.nama}</TableCell><TableCell>{d.nama_kelas || '-'}</TableCell>
               <TableCell>{d.jenis_kelamin || '-'}</TableCell>
+              <TableCell>{statusLabel ? <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusColor}`}>{statusLabel}</span> : <span className="text-xs text-muted-foreground">Aktif</span>}</TableCell>
               <TableCell><div className="flex gap-1">
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteId(d.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                {(!d.status || d.status === 'aktif') && (
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { setStatusChangeId(d.id); setStatusChangeOpen(true); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                )}
               </div></TableCell>
             </TableRow>
-          ))}</TableBody>
+            );
+          })}</TableBody>
         </Table></div>
         {/* Pagination */}
         <PaginationBar
