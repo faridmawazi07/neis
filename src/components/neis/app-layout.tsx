@@ -117,26 +117,31 @@ export function AppLayout({ activePage, onNavigate, children }: AppLayoutProps) 
   const { theme, setTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
-  const [isWaliKelas, setIsWaliKelas] = useState(false);
 
   // Image preview modal
   const [imageOpen, setImageOpen] = useState(false);
 
   const role = user?.role || 'guru';
 
-  // Check if guru is wali kelas
+  // Check if guru is wali kelas via async fetch
+  const [waliKelasData, setWaliKelasData] = useState<{ guruId: string; isWali: boolean } | null>(null);
+
   useEffect(() => {
     if (role === 'guru' && user?.id) {
+      let cancelled = false;
       fetch(`/api/kelas?action=my-kelas&guru_id=${user.id}`, { credentials: 'include' })
         .then(res => res.json())
         .then(result => {
-          setIsWaliKelas(!!result.data);
+          if (!cancelled) setWaliKelasData({ guruId: user.id!, isWali: !!result.data });
         })
-        .catch(() => setIsWaliKelas(false));
-    } else {
-      setIsWaliKelas(false);
+        .catch(() => {
+          if (!cancelled) setWaliKelasData({ guruId: user.id!, isWali: false });
+        });
+      return () => { cancelled = true; };
     }
   }, [role, user?.id]);
+
+  const isWaliKelas = role === 'guru' && waliKelasData?.guruId === user?.id ? waliKelasData.isWali : false;
 
   const items = useMemo(() => getBaseMenuItems(role, isWaliKelas), [role, isWaliKelas]);
 

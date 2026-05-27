@@ -10,6 +10,7 @@ import { KehadiranPage } from '@/components/neis/kehadiran-page';
 import { JadwalPage } from '@/components/neis/jadwal-page';
 import { HariMaster, KelasMaster, MapelMaster, StatusKehadiranMaster, HariLiburMaster } from '@/components/neis/master-data';
 import { SiswaPage } from '@/components/neis/siswa-page';
+import { WaliKelasSiswaPage } from '@/components/neis/wali-kelas-siswa-page';
 import { DataPegawaiPage } from '@/components/neis/data-pegawai';
 import { ProfilePage } from '@/components/neis/profile-page';
 import { GitControlPage } from '@/components/neis/git-control';
@@ -132,7 +133,8 @@ export default function HomePage() {
       case 'hari-libur':
         return <HariLiburMaster />;
       case 'siswa':
-        return <SiswaPage />;
+        // Guru wali kelas sees limited view, others see full SiswaPage
+        return user?.role === 'guru' ? <WaliKelasSiswaPage /> : <SiswaPage />;
       case 'data-pegawai':
         return <DataPegawaiPage initialTab={deepLink === 'data-pegawai-approve' ? 'approve' : 'data'} />;
       case 'backup-restore':
