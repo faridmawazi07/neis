@@ -20,6 +20,7 @@ import {
   List,
   UserPlus,
   Loader2,
+  PlusCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -29,6 +30,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { PageName } from './app-layout';
 import { usePagination } from '@/hooks/use-pagination';
 import { PaginationBar } from '@/components/neis/pagination-bar';
+import { KehadiranForm } from './kehadiran-form';
 
 interface DashboardProps {
   onNavigate: (page: PageName) => void;
@@ -643,37 +645,53 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
     <div>
       <h1 className="text-xl font-bold mb-4">Dashboard</h1>
 
-      {/* Siswa Card - All Roles */}
-      {siswaPerKelas.length > 0 && (
-        <Card className="mb-4 border-ocean/20 dark:border-sky-800">
-          <CardContent className="p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold flex items-center gap-1.5">
-                <Users className="h-4 w-4 text-ocean dark:text-sky-400" />
-                Jumlah Siswa
-              </span>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-blue-600 dark:text-blue-400">♂ {stats.totalLaki || 0}</span>
-                <span className="text-xs text-pink-600 dark:text-pink-400">♀ {stats.totalPerempuan || 0}</span>
-                <span className="text-lg font-bold text-ocean dark:text-sky-400">{stats.totalSiswa || 0}</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-              {siswaPerKelas.map((k: any) => (
-                <div key={k.kelas_id} className="rounded-lg bg-accent/50 px-2.5 py-1.5 text-center">
-                  <p className="text-xs font-semibold truncate">{k.nama_kelas}</p>
-                  <p className="text-sm font-bold text-ocean dark:text-sky-400">{k.total}</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    <span className="text-blue-600 dark:text-blue-400">♂{k.laki}</span>
-                    <span className="mx-0.5">·</span>
-                    <span className="text-pink-600 dark:text-pink-400">♀{k.perempuan}</span>
-                  </p>
+      {/* Siswa + Mengajar Bar */}
+      <div className="flex items-center gap-2 mb-4">
+        {siswaPerKelas.length > 0 && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="text-sm bg-ocean/10 text-ocean dark:text-sky-400 dark:bg-sky-900/30 px-3 py-1.5 rounded-full font-medium hover:bg-ocean/20 dark:hover:bg-sky-900/50 transition-colors flex items-center gap-1.5 cursor-pointer">
+                <Users className="h-3.5 w-3.5" />
+                Jumlah Siswa: <strong>{stats.totalSiswa || 0}</strong>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-0" align="start">
+              <div className="p-3 border-b">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-sm">Jumlah Siswa</span>
+                  <span className="text-sm font-bold text-ocean dark:text-sky-400">{stats.totalSiswa || 0}</span>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+                  <span className="text-blue-600 dark:text-blue-400">♂ L: {stats.totalLaki || 0}</span>
+                  <span className="text-pink-600 dark:text-pink-400">♀ P: {stats.totalPerempuan || 0}</span>
+                </div>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {siswaPerKelas.map((k: any) => (
+                  <div key={k.kelas_id} className="flex items-center justify-between px-3 py-2 hover:bg-accent/50 text-sm border-b last:border-b-0">
+                    <span className="font-medium">{k.nama_kelas}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-blue-600 dark:text-blue-400">♂ {k.laki}</span>
+                      <span className="text-xs text-pink-600 dark:text-pink-400">♀ {k.perempuan}</span>
+                      <span className="font-bold text-ocean dark:text-sky-400 min-w-[20px] text-right">{k.total}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+        {role === 'guru' && (
+          <Button
+            size="sm"
+            className="bg-ocean hover:bg-ocean-dark text-white h-7 text-xs rounded-full px-3"
+            onClick={() => setKehadiranFormOpen(true)}
+          >
+            <PlusCircle className="h-3.5 w-3.5 mr-1" />
+            Mengajar
+          </Button>
+        )}
+      </div>
 
       {role === 'admin' && renderAdminWidgets()}
       {role === 'guru' && renderGuruWidgets()}
