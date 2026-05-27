@@ -668,6 +668,10 @@ export function Dashboard({ onNavigate, onDeepNavigate, deepLink }: DashboardPro
                   <span className="text-blue-600 dark:text-blue-400">♂ L: {stats.totalLaki || 0}</span>
                   <span className="text-pink-600 dark:text-pink-400">♀ P: {stats.totalPerempuan || 0}</span>
                 </div>
+                <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t">
+                  <span className="font-semibold text-sm">Jumlah Kelas</span>
+                  <span className="text-sm font-bold text-ocean dark:text-sky-400">{siswaPerKelas.length}</span>
+                </div>
               </div>
               <div className="max-h-64 overflow-y-auto">
                 {siswaPerKelas.map((k: any) => (
