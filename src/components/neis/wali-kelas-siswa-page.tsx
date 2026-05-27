@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,12 +13,11 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Search, Upload, UserX, ArrowRightLeft, Loader2, Users, FileText, FileDown } from 'lucide-react';
+import { Plus, Search, UserX, ArrowRightLeft, Loader2, Users, FileText, FileDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePagination } from '@/hooks/use-pagination';
 import { PaginationBar } from '@/components/neis/pagination-bar';
-import { Progress } from '@/components/ui/progress';
 
 export function WaliKelasSiswaPage() {
   const { user } = useAuthStore();
@@ -40,20 +39,6 @@ export function WaliKelasSiswaPage() {
   // Delete → Status change
   const [statusChangeOpen, setStatusChangeOpen] = useState(false);
   const [statusChangeId, setStatusChangeId] = useState<string | null>(null);
-
-  // Import
-  const importRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState(0);
-  const [importDone, setImportDone] = useState(false);
-  const [importSuccess, setImportSuccess] = useState(0);
-  const [importDuplicates, setImportDuplicates] = useState(0);
-  const [importFailed, setImportFailed] = useState(0);
-  const [importErrors, setImportErrors] = useState<any[]>([]);
-  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
-  const [importVerifyResult, setImportVerifyResult] = useState<any>(null);
-  const [importPendingItems, setImportPendingItems] = useState<any[]>([]);
-  const [importSteps, setImportSteps] = useState<{ step: string; status: 'processing' | 'done' | 'warning' | 'error'; detail?: string }[]>([]);
 
   // Pagination
   const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(data.length);
@@ -147,215 +132,6 @@ export function WaliKelasSiswaPage() {
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
   };
 
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const fileName = file.name.toLowerCase();
-
-    setImporting(true);
-    setImportProgress(0);
-    setImportDone(false);
-    setImportSuccess(0);
-    setImportDuplicates(0);
-    setImportFailed(0);
-    setImportErrors([]);
-    setImportSteps([{ step: 'Membaca file...', status: 'processing' }]);
-    setImportVerifyResult(null);
-    setImportPendingItems([]);
-
-    try {
-      const items: any[] = [];
-      const skippedRows: any[] = [];
-
-      if (fileName.endsWith('.pdf')) {
-        // PDF Import
-        setImportSteps(prev => [...prev, { step: 'Membaca file PDF...', status: 'processing' }]);
-        const pdfParse = (await import('pdf-parse')).default;
-        const buffer = await file.arrayBuffer();
-        const pdfData = await pdfParse(Buffer.from(buffer));
-        const text = pdfData.text;
-
-        setImportSteps(prev => [...prev, { step: 'Membaca file PDF...', status: 'done', detail: `${pdfData.numpages} halaman` }]);
-        setImportSteps(prev => [...prev, { step: 'Mem-parsing data tabel...', status: 'processing' }]);
-
-        // Parse table from PDF text
-        // Expected format: rows with NIS, NISN, Nama, JK columns
-        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-        for (const line of lines) {
-          // Try to parse line as: number NIS NISN Nama JK
-          // or: NIS NISN Nama JK
-          const parts = line.split(/\s{2,}|\t/).filter(Boolean);
-          if (parts.length >= 3) {
-            // Skip header-like lines
-            const firstPart = parts[0].trim();
-            if (/^(no|nis|nama|kelas|jenis|jk|\d+$)/i.test(firstPart) && parts.length < 4) continue;
-
-            let nis = '', nisn = '', nama = '', jk = '';
-            let startIdx = 0;
-
-            // If first part is a row number, skip it
-            if (/^\d+$/.test(firstPart)) startIdx = 1;
-
-            if (parts.length > startIdx + 2) {
-              nis = String(parts[startIdx] || '').trim();
-              nisn = String(parts[startIdx + 1] || '').trim();
-              nama = String(parts[startIdx + 2] || '').trim();
-              jk = parts.length > startIdx + 3 ? String(parts[startIdx + 3] || '').trim() : '';
-            }
-
-            if (!nis || !nisn || !nama) {
-              skippedRows.push({ error: `Baris tidak bisa diparse: "${line.substring(0, 50)}"` });
-              continue;
-            }
-            items.push({
-              nis, nisn, nama,
-              namaKelas: myKelas.nama_kelas, kelas_id: myKelas.id, jenis_kelamin: jk || null,
-            });
-          }
-        }
-
-        if (items.length === 0 && skippedRows.length === 0) {
-          setImportSteps(prev => [...prev, { step: 'Mem-parsing data tabel...', status: 'warning', detail: 'Format tabel tidak dikenali' }]);
-          // Try comma/semicolon separated values as fallback
-          for (const line of lines) {
-            const parts = line.split(/[;,\|]/).map(p => p.trim()).filter(Boolean);
-            if (parts.length >= 3) {
-              const firstPart = parts[0].trim();
-              if (/^(no|nis|nama|kelas|jenis|jk)/i.test(firstPart)) continue;
-              const nis = parts[0], nisn = parts[1], nama = parts[2], jk = parts[3] || '';
-              if (nis && nisn && nama) {
-                items.push({ nis, nisn, nama, namaKelas: myKelas.nama_kelas, kelas_id: myKelas.id, jenis_kelamin: jk || null });
-              }
-            }
-          }
-        }
-      } else {
-        // Excel Import
-        setImportSteps(prev => [...prev, { step: 'Membaca file Excel...', status: 'processing' }]);
-        const XLSX = await import('xlsx');
-        const buffer = await file.arrayBuffer();
-        const wb = XLSX.read(buffer);
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-        setImportSteps(prev => [...prev, { step: 'Membaca file Excel...', status: 'done', detail: `${rows.length - 1} baris data` }]);
-
-        for (let i = 1; i < rows.length; i++) {
-          const [nis, nisn, nama, jk] = rows[i];
-          if (!nis || !nisn || !nama) {
-            skippedRows.push({ row: i + 1, error: 'Data tidak lengkap' });
-            continue;
-          }
-          items.push({
-            nis: String(nis), nisn: String(nisn), nama: String(nama),
-            namaKelas: myKelas.nama_kelas, kelas_id: myKelas.id, jenis_kelamin: jk || null,
-          });
-        }
-      }
-
-      if (items.length === 0) {
-        setImporting(false); setImportDone(true);
-        setImportErrors(skippedRows); setImportFailed(skippedRows.length);
-        setImportSteps(prev => [...prev, { step: 'Import selesai', status: 'error', detail: 'Tidak ada data valid' }]);
-        toast({ title: 'Import Gagal', description: 'Tidak ada data valid untuk diimpor', variant: 'destructive' });
-        e.target.value = '';
-        return;
-      }
-
-      setImportSteps(prev => [...prev, { step: `Ditemukan ${items.length} data valid`, status: 'done' }]);
-
-      // Verify
-      setImportSteps(prev => [...prev, { step: 'Memverifikasi data...', status: 'processing' }]);
-      const verifyRes = await fetch('/api/siswa?action=verify-import', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }), credentials: 'include',
-      });
-
-      if (!verifyRes.ok) {
-        setImportSteps(prev => [...prev, { step: 'Verifikasi gagal', status: 'error' }]);
-        setImporting(false); setImportDone(true);
-        e.target.value = '';
-        return;
-      }
-
-      const verifyResult = await verifyRes.json();
-      setImportVerifyResult(verifyResult);
-      const newCount = verifyResult.newCount || 0;
-
-      if (newCount === 0) {
-        setImporting(false); setImportDone(true);
-        setImportDuplicates(verifyResult.duplicateCount || 0);
-        toast({ title: 'Import Dilewati', description: 'Semua data sudah ada', variant: 'destructive' });
-        e.target.value = '';
-        return;
-      }
-
-      setImportPendingItems(verifyResult.newItems.map((item: any) => ({
-        nis: item.nis, nisn: item.nisn, nama: item.nama,
-        kelas_id: item.kelas_id, jenis_kelamin: item.jenis_kelamin,
-      })));
-      setImporting(false);
-      setImportConfirmOpen(true);
-    } catch {
-      toast({ title: 'Error', description: 'Gagal membaca file', variant: 'destructive' });
-      setImportSteps(prev => [...prev, { step: 'Gagal membaca file', status: 'error' }]);
-      setImporting(false); setImportDone(true);
-    }
-    e.target.value = '';
-  };
-
-  const executeImport = async () => {
-    setImportConfirmOpen(false);
-    setImporting(true);
-    setImportProgress(0);
-    setImportSuccess(0);
-    setImportDuplicates(importVerifyResult?.duplicateCount || 0);
-    setImportFailed(0);
-
-    const items = importPendingItems;
-    if (items.length === 0) { setImporting(false); setImportDone(true); return; }
-
-    const BATCH_SIZE = 50;
-    let totalSuccess = 0;
-    let totalFailed = 0;
-
-    setImportSteps(prev => [...prev, { step: `Mengimpor ${items.length} data...`, status: 'processing' }]);
-
-    for (let batch = 0; batch < items.length; batch += BATCH_SIZE) {
-      const batchItems = items.slice(batch, batch + BATCH_SIZE);
-      const res = await fetch('/api/siswa?action=bulk-import', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: batchItems }), credentials: 'include',
-      });
-      const processed = Math.min(batch + BATCH_SIZE, items.length);
-      setImportProgress(Math.round((processed / items.length) * 100));
-
-      if (res.ok) {
-        const result = await res.json();
-        totalSuccess += result.successCount || 0;
-        totalFailed += result.failedCount || 0;
-        setImportSuccess(totalSuccess);
-        setImportFailed(totalFailed);
-      } else {
-        totalFailed += batchItems.length;
-        setImportFailed(totalFailed);
-      }
-    }
-
-    setImportSteps(prev => [...prev, { step: 'Import selesai', status: totalFailed > 0 ? 'warning' : 'done', detail: `${totalSuccess} berhasil, ${totalFailed} gagal` }]);
-    setImportDone(true);
-    setImporting(false);
-    setImportProgress(100);
-    fetchData();
-
-    if (totalFailed === 0) {
-      toast({ title: 'Import Berhasil', description: `${totalSuccess} data siswa berhasil diimpor` });
-    } else {
-      toast({ title: 'Import Selesai', description: `${totalSuccess} berhasil, ${totalFailed} gagal` });
-    }
-  };
-
   const handleExportExcel = async () => {
     const XLSX = await import('xlsx');
     const wsData = [['NIS', 'NISN', 'Nama', 'Kelas', 'Jenis Kelamin', 'Status']];
@@ -430,10 +206,6 @@ export function WaliKelasSiswaPage() {
           <Button variant="outline" size="sm" onClick={handleExportExcel}>
             <FileDown className="h-4 w-4 mr-1" /> Excel
           </Button>
-          <Button variant="outline" size="sm" onClick={() => importRef.current?.click()}>
-            <Upload className="h-4 w-4 mr-1" /> Import
-          </Button>
-          <input ref={importRef} type="file" accept=".xlsx,.xls,.pdf" className="hidden" onChange={handleImportFile} />
           <Button onClick={openAdd} size="sm" className="bg-ocean hover:bg-ocean-dark text-white">
             <Plus className="h-4 w-4 mr-1" /> Tambah
           </Button>
@@ -529,55 +301,6 @@ export function WaliKelasSiswaPage() {
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent></AlertDialog>
-
-      {/* Import Progress */}
-      {(importing || importDone) && !importConfirmOpen && (
-        <Dialog open onOpenChange={() => { if (importDone) { setImporting(false); setImportDone(false); } }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle>Import Siswa</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              {importSteps.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                  {s.status === 'processing' && <Loader2 className="h-4 w-4 animate-spin text-ocean" />}
-                  {s.status === 'done' && <span className="text-green-600">✓</span>}
-                  {s.status === 'warning' && <span className="text-amber-600">⚠</span>}
-                  {s.status === 'error' && <span className="text-red-600">✗</span>}
-                  <span>{s.step}</span>
-                  {s.detail && <span className="text-muted-foreground text-xs">({s.detail})</span>}
-                </div>
-              ))}
-              {importing && <Progress value={importProgress} className="h-2" />}
-              {importDone && (
-                <div className="mt-3 p-3 rounded-lg bg-muted text-sm space-y-1">
-                  <div>Berhasil: <strong className="text-green-600">{importSuccess}</strong></div>
-                  <div>Sudah ada (dilewati): <strong className="text-amber-600">{importDuplicates}</strong></div>
-                  <div>Gagal: <strong className="text-red-600">{importFailed}</strong></div>
-                </div>
-              )}
-            </div>
-            {importDone && (
-              <DialogFooter><Button onClick={() => { setImporting(false); setImportDone(false); }}>Tutup</Button></DialogFooter>
-            )}
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Import Confirmation */}
-      <AlertDialog open={importConfirmOpen} onOpenChange={setImportConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Konfirmasi Import</AlertDialogTitle>
-            <AlertDialogDescription>
-              {importVerifyResult?.newCount || 0} data siswa baru akan diimpor ke kelas <strong>{myKelas?.nama_kelas}</strong>.
-              {importVerifyResult?.duplicateCount > 0 && ` ${importVerifyResult.duplicateCount} data sudah ada dan akan dilewati.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction onClick={executeImport} className="bg-ocean hover:bg-ocean-dark text-white">Ya, Import</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

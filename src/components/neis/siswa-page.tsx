@@ -14,10 +14,11 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users, GraduationCap, UserX, ArrowRightLeft, BadgeCheck, UserCheck, FileText, FileDown } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users, GraduationCap, UserX, ArrowRightLeft, BadgeCheck, UserCheck, FileText, FileDown, ChevronsUpDown, X, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { usePagination } from '@/hooks/use-pagination';
 import { PaginationBar } from '@/components/neis/pagination-bar';
 
@@ -67,7 +68,9 @@ export function SiswaPage() {
   // Wali Kelas
   const [waliKelasOpen, setWaliKelasOpen] = useState(false);
   const [guruList, setGuruList] = useState<any[]>([]);
-  const [waliLoading, setWaliLoading] = useState<Record<string, boolean>>({});
+  const [waliLoading, setWaliLoading] = useState(false);
+  const [waliKelasDraft, setWaliKelasDraft] = useState<Record<string, string | null>>({});
+  const [waliPopoverOpen, setWaliPopoverOpen] = useState<Record<string, boolean>>({});
 
   // Import/Export
   const importRef = useRef<HTMLInputElement>(null);
@@ -652,7 +655,14 @@ export function SiswaPage() {
           <Button variant="outline" size="sm" onClick={() => setKenaikanOpen(true)}>
             <ArrowUpCircle className="h-4 w-4 mr-1" /> Kenaikan Kelas
           </Button>
-          <Button variant="outline" size="sm" onClick={() => { setWaliKelasOpen(true); fetchGuruList(); }}>
+          <Button variant="outline" size="sm" onClick={async () => {
+            await fetchGuruList();
+            // Initialize draft from current kelas list
+            const draft: Record<string, string | null> = {};
+            kelasList.forEach((k: any) => { draft[k.id] = k.wali_kelas_id || null; });
+            setWaliKelasDraft(draft);
+            setWaliKelasOpen(true);
+          }}>
             <UserCheck className="h-4 w-4 mr-1" /> Wali Kelas
           </Button>
           <Button variant="outline" size="sm" onClick={() => setKelulusanOpen(true)}>
@@ -1031,51 +1041,79 @@ export function SiswaPage() {
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {kelasList.map((k: any) => {
               const siswaCount = data.filter((s: any) => s.kelas_id === k.id).length;
-              const currentWali = k.wali_kelas_id;
-              const isLoading = waliLoading[k.id] || false;
+              const currentWaliId = waliKelasDraft[k.id] ?? null;
+              const currentWali = guruList.find((g: any) => g.id === currentWaliId);
+              // Filter guru: exclude those already selected as wali kelas for OTHER classes
+              const availableGuru = guruList.filter((g: any) => {
+                if (g.id === currentWaliId) return true; // Always show currently selected guru
+                // Check if this guru is selected for any other class in the draft
+                const isAssignedElsewhere = Object.entries(waliKelasDraft).some(
+                  ([kelasId, waliId]) => kelasId !== k.id && waliId === g.id
+                );
+                return !isAssignedElsewhere;
+              });
               return (
                 <div key={k.id} className="flex items-center gap-3 p-2.5 rounded-lg border">
                   <div className="flex-1 min-w-0">
                     <span className="text-sm font-medium">{k.nama_kelas}</span>
                     <span className="text-xs text-muted-foreground ml-2">({siswaCount} siswa)</span>
                   </div>
-                  <Select
-                    value={currentWali || '__none__'}
-                    onValueChange={async (v) => {
-                      const newWaliId = v === '__none__' ? null : v;
-                      setWaliLoading(prev => ({ ...prev, [k.id]: true }));
-                      try {
-                        const res = await fetch('/api/kelas', {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ id: k.id, wali_kelas_id: newWaliId }),
-                          credentials: 'include',
-                        });
-                        const result = await res.json();
-                        if (!res.ok) {
-                          toast({ title: 'Gagal', description: result.error, variant: 'destructive' });
-                        } else {
-                          toast({ title: 'Berhasil', description: `Wali kelas ${k.nama_kelas} diperbarui` });
-                          fetchKelas();
-                        }
-                      } catch {
-                        toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' });
-                      } finally {
-                        setWaliLoading(prev => ({ ...prev, [k.id]: false }));
-                      }
-                    }}
-                    disabled={isLoading}
+                  <Popover
+                    open={waliPopoverOpen[k.id] || false}
+                    onOpenChange={(open) => setWaliPopoverOpen(prev => ({ ...prev, [k.id]: open }))}
                   >
-                    <SelectTrigger className="w-44 shrink-0">
-                      {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <SelectValue />}
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">-- Tanpa Wali --</SelectItem>
-                      {guruList.map((g: any) => (
-                        <SelectItem key={g.id} value={g.id}>{g.nama} {g.nip ? `(${g.nip})` : ''}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-48 shrink-0 justify-between text-left font-normal"
+                        disabled={waliLoading}
+                      >
+                        {waliLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : currentWali ? (
+                          <span className="truncate">{currentWali.nama}</span>
+                        ) : (
+                          <span className="text-muted-foreground">Tanpa Wali</span>
+                        )}
+                        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-0" align="end">
+                      <Command>
+                        <CommandInput placeholder="Cari nama/NIP..." />
+                        <CommandList>
+                          <CommandEmpty>Guru tidak ditemukan</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem
+                              value="__none__"
+                              onSelect={() => {
+                                setWaliKelasDraft(prev => ({ ...prev, [k.id]: null }));
+                                setWaliPopoverOpen(prev => ({ ...prev, [k.id]: false }));
+                              }}
+                            >
+                              <Check className={`mr-1.5 h-3.5 w-3.5 ${!currentWaliId ? 'opacity-100' : 'opacity-0'}`} />
+                              <span className="text-muted-foreground">Tanpa Wali</span>
+                            </CommandItem>
+                            {availableGuru.map((g: any) => (
+                              <CommandItem
+                                key={g.id}
+                                value={`${g.nama} ${g.nip || ''}`}
+                                onSelect={() => {
+                                  setWaliKelasDraft(prev => ({ ...prev, [k.id]: g.id }));
+                                  setWaliPopoverOpen(prev => ({ ...prev, [k.id]: false }));
+                                }}
+                              >
+                                <Check className={`mr-1.5 h-3.5 w-3.5 ${currentWaliId === g.id ? 'opacity-100' : 'opacity-0'}`} />
+                                <span className="truncate">{g.nama}</span>
+                                {g.nip && <span className="ml-1 text-xs text-muted-foreground">({g.nip})</span>}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               );
             })}
@@ -1084,7 +1122,53 @@ export function SiswaPage() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setWaliKelasOpen(false)}>Tutup</Button>
+            <Button variant="outline" onClick={() => setWaliKelasOpen(false)}>Batal</Button>
+            <Button
+              onClick={async () => {
+                setWaliLoading(true);
+                try {
+                  // Save all changes - only update classes that changed
+                  const updates = kelasList.filter((k: any) => {
+                    const originalWali = k.wali_kelas_id || null;
+                    const newWali = waliKelasDraft[k.id] ?? null;
+                    return originalWali !== newWali;
+                  });
+                  let successCount = 0;
+                  let failCount = 0;
+                  for (const k of updates) {
+                    const res = await fetch('/api/kelas', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: k.id, wali_kelas_id: waliKelasDraft[k.id] ?? null }),
+                      credentials: 'include',
+                    });
+                    if (res.ok) {
+                      successCount++;
+                    } else {
+                      failCount++;
+                    }
+                  }
+                  if (updates.length === 0) {
+                    toast({ title: 'Info', description: 'Tidak ada perubahan' });
+                  } else if (failCount === 0) {
+                    toast({ title: 'Berhasil', description: `${successCount} wali kelas berhasil diperbarui` });
+                  } else {
+                    toast({ title: 'Sebagian Berhasil', description: `${successCount} berhasil, ${failCount} gagal`, variant: 'destructive' });
+                  }
+                  fetchKelas();
+                  setWaliKelasOpen(false);
+                } catch {
+                  toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' });
+                } finally {
+                  setWaliLoading(false);
+                }
+              }}
+              disabled={waliLoading}
+              className="bg-ocean hover:bg-ocean-dark text-white"
+            >
+              {waliLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : null}
+              {waliLoading ? 'Menyimpan...' : 'Simpan'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
