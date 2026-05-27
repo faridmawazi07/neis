@@ -963,7 +963,10 @@ export function SiswaPage() {
             </div>
           </div>
           <div className="space-y-2 max-h-72 overflow-y-auto">
-            {kelasList.map((k: any) => {
+            {kelasList.filter((k: any) => parseInt(k.nama_kelas.trim(), 10) === 12).length === 0 ? (
+              <div className="text-sm text-muted-foreground text-center py-6">Tidak ada kelas 12</div>
+            ) : (
+              kelasList.filter((k: any) => parseInt(k.nama_kelas.trim(), 10) === 12).map((k: any) => {
               const siswaCount = data.filter((s: any) => s.kelas_id === k.id).length;
               const isSelected = kelulusanSelected.includes(k.id);
               return (
@@ -977,7 +980,8 @@ export function SiswaPage() {
                   {isSelected && <BadgeCheck className="h-4 w-4 text-green-600" />}
                 </div>
               );
-            })}
+            })
+            )}
           </div>
           {kelulusanSelected.length > 0 && (
             <div className="mt-3 p-2.5 bg-green-50 dark:bg-green-950/20 rounded-lg text-sm">
