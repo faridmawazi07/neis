@@ -70,7 +70,7 @@ export function SiswaPage() {
   const [guruList, setGuruList] = useState<any[]>([]);
   const [waliLoading, setWaliLoading] = useState(false);
   const [waliKelasDraft, setWaliKelasDraft] = useState<Record<string, string | null>>({});
-  const [waliPopoverOpen, setWaliPopoverOpen] = useState<Record<string, boolean>>({});
+  const [waliSearch, setWaliSearch] = useState<Record<string, string>>({});
 
   // Import/Export
   const importRef = useRef<HTMLInputElement>(null);
