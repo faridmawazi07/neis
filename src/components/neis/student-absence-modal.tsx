@@ -31,22 +31,20 @@ export function StudentAbsenceModal({
   onClose,
   kelasId,
   siswaList,
-  selectedIzinSakit: initialIzinSakit,
-  selectedAlfa: initialAlfa,
+  selectedIzinSakit,
+  selectedAlfa,
   onSave,
 }: StudentAbsenceModalProps) {
-  const [search, setSearch] = useState('');
-
   // Filter only valid IDs that exist in siswaList
   const validSiswaIds = useMemo(() => new Set(siswaList.map(s => s.id)), [siswaList]);
-  const validInitialIzinSakit = useMemo(() => initialIzinSakit.filter(id => validSiswaIds.has(id)), [initialIzinSakit, validSiswaIds]);
-  const validInitialAlfa = useMemo(() => initialAlfa.filter(id => validSiswaIds.has(id)), [initialAlfa, validSiswaIds]);
+  const validSelectedIzinSakit = useMemo(() => selectedIzinSakit.filter(id => validSiswaIds.has(id)), [selectedIzinSakit, validSiswaIds]);
+  const validSelectedAlfa = useMemo(() => selectedAlfa.filter(id => validSiswaIds.has(id)), [selectedAlfa, validSiswaIds]);
 
-  // Use a sync key based on props to reset state when initial values change
-  // When this key changes, the component re-mounts with fresh state
+  // Use a sync key to force re-mount when initial selection changes or kelasId changes
+  // This ensures the inner component always starts with the correct pre-selected students
   const syncKey = useMemo(() =>
-    `${validInitialIzinSakit.join(',')}-${validInitialAlfa.join(',')}`,
-    [validInitialIzinSakit, validInitialAlfa]
+    `${kelasId}:${validSelectedIzinSakit.join(',')}:${validSelectedAlfa.join(',')}:${siswaList.length}`,
+    [kelasId, validSelectedIzinSakit, validSelectedAlfa, siswaList.length]
   );
 
   return (
@@ -55,11 +53,9 @@ export function StudentAbsenceModal({
       open={open}
       onClose={onClose}
       siswaList={siswaList}
-      initialIzinSakit={validInitialIzinSakit}
-      initialAlfa={validInitialAlfa}
+      initialIzinSakit={validSelectedIzinSakit}
+      initialAlfa={validSelectedAlfa}
       onSave={onSave}
-      search={search}
-      setSearch={setSearch}
     />
   );
 }
@@ -72,47 +68,48 @@ function StudentAbsenceModalInner({
   initialIzinSakit,
   initialAlfa,
   onSave,
-  search,
-  setSearch,
 }: {
   open: boolean;
   onClose: () => void;
   siswaList: Siswa[];
   initialIzinSakit: string[];
   initialAlfa: string[];
-  onSave: (izinSakit: string[], alfa: string[]) => void;
-  search: string;
-  setSearch: (s: string) => void;
+  onSave: (izinSakin: string[], alfa: string[]) => void;
 }) {
   // State initialized from props (only on mount, which is controlled by key)
   const [izinSakit, setIzinSakit] = useState<string[]>(() => [...initialIzinSakit]);
   const [alfa, setAlfa] = useState<string[]>(() => [...initialAlfa]);
+  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState('izin-sakit');
 
-  const filteredSiswa = siswaList.filter(
-    (s) =>
-      s.nama.toLowerCase().includes(search.toLowerCase()) ||
-      s.nis.toLowerCase().includes(search.toLowerCase())
+  const filteredSiswa = useMemo(() =>
+    siswaList.filter(
+      (s) =>
+        s.nama.toLowerCase().includes(search.toLowerCase()) ||
+        s.nis.toLowerCase().includes(search.toLowerCase())
+    ),
+    [siswaList, search]
   );
 
   const toggleIzinSakit = (id: string) => {
     setIzinSakit((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      // Remove from alfa if adding to izin/sakit
-      if (!prev.includes(id)) {
-        setAlfa((a) => a.filter((x) => x !== id));
+      if (prev.includes(id)) {
+        return prev.filter((x) => x !== id);
       }
-      return next;
+      // Remove from alfa if adding to izin/sakit
+      setAlfa((a) => a.filter((x) => x !== id));
+      return [...prev, id];
     });
   };
 
   const toggleAlfa = (id: string) => {
     setAlfa((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      // Remove from izin/sakit if adding to alfa
-      if (!prev.includes(id)) {
-        setIzinSakit((i) => i.filter((x) => x !== id));
+      if (prev.includes(id)) {
+        return prev.filter((x) => x !== id);
       }
-      return next;
+      // Remove from izin/sakit if adding to alfa
+      setIzinSakit((i) => i.filter((x) => x !== id));
+      return [...prev, id];
     });
   };
 
@@ -138,7 +135,7 @@ function StudentAbsenceModalInner({
           />
         </div>
 
-        <Tabs defaultValue="izin-sakit" className="flex-1 min-h-0">
+        <Tabs value={tab} onValueChange={setTab} className="flex-1 min-h-0">
           <TabsList className="w-full">
             <TabsTrigger value="izin-sakit" className="flex-1">
               Izin/Sakit ({izinSakit.length})
