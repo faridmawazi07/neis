@@ -236,7 +236,7 @@ export function WaliKelasSiswaPage() {
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exportingExcel || data.length === 0}>
             {exportingExcel ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileDown className="h-4 w-4 mr-1" />}
-            Excel
+            Export Excel
           </Button>
           <Button onClick={openAdd} size="sm" className="bg-ocean hover:bg-ocean-dark text-white">
             <Plus className="h-4 w-4 mr-1" /> Tambah
