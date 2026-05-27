@@ -48,6 +48,8 @@ export function SiswaPage() {
   // Kenaikan kelas
   const [kenaikanOpen, setKenaikanOpen] = useState(false);
   const [kenaikanMapping, setKenaikanMapping] = useState<Record<string, string>>({});
+  const [kenaikanConfirmOpen, setKenaikanConfirmOpen] = useState(false);
+  const [kenaikanLoading, setKenaikanLoading] = useState(false);
 
   // Pagination
   const { pageSize, setPageSize, currentPage, setCurrentPage, totalPages, pageStart, pageEnd, paginatedData } = usePagination(data.length);
@@ -182,17 +184,58 @@ export function SiswaPage() {
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
   };
 
+  // Compute kenaikan preview data
+  const kenaikanPreview = (() => {
+    const validMappings: { oldKelasId: string; oldKelasName: string; newKelasId: string; newKelasName: string; studentCount: number }[] = [];
+    const skipped: string[] = [];
+    let hasEmpty = false;
+
+    for (const [oldKelasId, newKelasId] of Object.entries(kenaikanMapping)) {
+      if (!newKelasId) { hasEmpty = true; continue; }
+      const oldKelas = kelasList.find((k: any) => k.id === oldKelasId);
+      const newKelas = kelasList.find((k: any) => k.id === newKelasId);
+      if (!oldKelas || !newKelas) continue;
+
+      if (oldKelasId === newKelasId) {
+        skipped.push(oldKelas.nama_kelas);
+        continue;
+      }
+
+      const studentCount = data.filter((s: any) => s.kelas_id === oldKelasId).length;
+      validMappings.push({
+        oldKelasId, oldKelasName: oldKelas.nama_kelas,
+        newKelasId, newKelasName: newKelas.nama_kelas, studentCount,
+      });
+    }
+
+    const totalAffected = validMappings.reduce((sum, m) => sum + m.studentCount, 0);
+    return { validMappings, skipped, hasEmpty, totalAffected, hasValidMappings: validMappings.length > 0 };
+  })();
+
   const handleKenaikanKelas = async () => {
+    setKenaikanLoading(true);
     try {
       const res = await fetch('/api/siswa?action=kenaikan-kelas', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mapping: kenaikanMapping }), credentials: 'include',
       });
       const data = await res.json();
-      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); return; }
-      toast({ title: 'Berhasil', description: data.message });
-      setKenaikanOpen(false); fetchData();
+      if (!res.ok) { toast({ title: 'Gagal', description: data.error, variant: 'destructive' }); setKenaikanLoading(false); return; }
+
+      // Show success with details
+      const details = data.details || [];
+      const detailMsg = details.length > 0
+        ? details.map((d: any) => `${d.from} → ${d.to} (${d.count} siswa)`).join(', ')
+        : '';
+      const warningMsg = data.warnings?.length > 0 ? ` Peringatan: ${data.warnings.join('; ')}` : '';
+
+      toast({ title: 'Berhasil', description: `${data.message}${detailMsg ? ' Detail: ' + detailMsg : ''}${warningMsg}` });
+      setKenaikanConfirmOpen(false);
+      setKenaikanOpen(false);
+      setKenaikanMapping({});
+      fetchData();
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
+    finally { setKenaikanLoading(false); }
   };
 
   const handleExportExcel = async () => {
@@ -625,24 +668,114 @@ export function SiswaPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Kenaikan Kelas */}
-      <Dialog open={kenaikanOpen} onOpenChange={setKenaikanOpen}><DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Kenaikan Kelas Massal</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground mb-4">Pilih kelas tujuan untuk setiap kelas saat ini:</p>
-        <div className="space-y-3 max-h-64 overflow-y-auto">
-          {kelasList.map((k: any) => (
-            <div key={k.id} className="flex items-center gap-3">
-              <span className="text-sm w-32 font-medium">{k.nama_kelas}</span>
-              <span className="text-muted-foreground">→</span>
-              <Select value={kenaikanMapping[k.id] || ''} onValueChange={(v) => setKenaikanMapping(prev => ({ ...prev, [k.id]: v }))}>
-                <SelectTrigger className="flex-1"><SelectValue placeholder="Kelas tujuan" /></SelectTrigger>
-                <SelectContent>{kelasList.map((k2: any) => <SelectItem key={k2.id} value={k2.id}>{k2.nama_kelas}</SelectItem>)}</SelectContent>
-              </Select>
+      {/* Kenaikan Kelas - Mapping Dialog */}
+      <Dialog open={kenaikanOpen} onOpenChange={(open) => { setKenaikanOpen(open); if (!open) setKenaikanMapping({}); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Kenaikan Kelas Massal</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground mb-2">Pilih kelas tujuan untuk setiap kelas saat ini:</p>
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                <p className="font-medium">Perhatian:</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  <li>Semua siswa di kelas asal akan dipindahkan ke kelas tujuan</li>
+                  <li>Data kehadiran mengajar yang sudah ada tidak berubah (tetap tercatat di kelas asal)</li>
+                  <li>Jadwal pembelajaran tidak ikut berpindah, perlu diatur manual</li>
+                  <li>Tindakan ini tidak dapat dibatalkan</li>
+                </ul>
+              </div>
             </div>
-          ))}
-        </div>
-        <DialogFooter><Button variant="outline" onClick={() => setKenaikanOpen(false)}>Batal</Button><Button onClick={handleKenaikanKelas} className="bg-ocean hover:bg-ocean-dark text-white">Proses Kenaikan</Button></DialogFooter>
-      </DialogContent></Dialog>
+          </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {kelasList.map((k: any) => {
+              const siswaCount = data.filter((s: any) => s.kelas_id === k.id).length;
+              return (
+                <div key={k.id} className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{k.nama_kelas}</span>
+                      <span className="text-xs text-muted-foreground">({siswaCount} siswa)</span>
+                    </div>
+                  </div>
+                  <span className="text-muted-foreground shrink-0">→</span>
+                  <Select value={kenaikanMapping[k.id] || ''} onValueChange={(v) => setKenaikanMapping(prev => ({ ...prev, [k.id]: v }))}>
+                    <SelectTrigger className="w-40 shrink-0"><SelectValue placeholder="Kelas tujuan" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">-- Tidak Dipindah --</SelectItem>
+                      {kelasList.filter((k2: any) => k2.id !== k.id).map((k2: any) => <SelectItem key={k2.id} value={k2.id}>{k2.nama_kelas}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              );
+            })}
+          </div>
+          {kenaikanPreview.hasValidMappings && (
+            <div className="mt-3 p-2.5 bg-ocean/5 dark:bg-sky-900/20 rounded-lg text-sm">
+              <span className="font-medium text-ocean dark:text-sky-400">{kenaikanPreview.totalAffected} siswa</span>
+              <span className="text-muted-foreground"> akan dipindahkan dari </span>
+              <span className="font-medium text-ocean dark:text-sky-400">{kenaikanPreview.validMappings.length} kelas</span>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setKenaikanOpen(false); setKenaikanMapping({}); }}>Batal</Button>
+            <Button
+              onClick={() => {
+                if (!kenaikanPreview.hasValidMappings) {
+                  toast({ title: 'Perhatian', description: 'Tidak ada mapping kelas yang valid', variant: 'destructive' });
+                  return;
+                }
+                setKenaikanConfirmOpen(true);
+              }}
+              disabled={!kenaikanPreview.hasValidMappings}
+              className="bg-ocean hover:bg-ocean-dark text-white"
+            >
+              Proses Kenaikan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Kenaikan Kelas - Confirmation Dialog */}
+      <AlertDialog open={kenaikanConfirmOpen} onOpenChange={setKenaikanConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Konfirmasi Kenaikan Kelas
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>Anda akan memindahkan <strong>{kenaikanPreview.totalAffected} siswa</strong> dari <strong>{kenaikanPreview.validMappings.length} kelas</strong>. Tindakan ini tidak dapat dibatalkan!</p>
+                <div className="bg-muted rounded-lg p-3 space-y-1.5">
+                  {kenaikanPreview.validMappings.map((m, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span>{m.oldKelasName} → {m.newKelasName}</span>
+                      <span className="font-medium">{m.studentCount} siswa</span>
+                    </div>
+                  ))}
+                </div>
+                {kenaikanPreview.skipped.length > 0 && (
+                  <p className="text-xs text-muted-foreground">Kelas dilewati (sama): {kenaikanPreview.skipped.join(', ')}</p>
+                )}
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-2.5">
+                  <p className="text-xs text-amber-700 dark:text-amber-300">Pastikan jadwal pembelajaran sudah diatur untuk kelas tujuan setelah kenaikan kelas.</p>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={kenaikanLoading}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleKenaikanKelas}
+              disabled={kenaikanLoading}
+              className="bg-ocean hover:bg-ocean-dark text-white"
+            >
+              {kenaikanLoading ? 'Memproses...' : 'Ya, Proses Kenaikan'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
