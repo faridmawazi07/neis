@@ -408,15 +408,6 @@ export function KehadiranPage() {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {canAdd && !isHoliday && !outsideWorkHours && (
-            <Button
-              onClick={() => { setEditData(null); setFormOpen(true); }}
-              size="sm"
-              className="bg-ocean hover:bg-ocean-dark text-white"
-            >
-              <Plus className="h-4 w-4 mr-1" /> Tambah
-            </Button>
-          )}
           {canExport && (
             <>
               <Button variant="outline" size="sm" onClick={handleExportPDF}>
