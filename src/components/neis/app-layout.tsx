@@ -94,6 +94,7 @@ const menuItems = {
   pegawai: [
     { id: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard },
     { id: 'kehadiran' as PageName, label: 'Kehadiran', icon: ClipboardList },
+    { id: 'siswa' as PageName, label: 'Siswa', icon: Users },
     { id: 'profile' as PageName, label: 'Profile', icon: User },
   ],
   pimpinan: [

@@ -33,7 +33,19 @@ function useHydrated() {
 export default function HomePage() {
   const { isAuthenticated, user, logout } = useAuthStore();
   const [authView, setAuthView] = useState<AuthView>('login');
-  const [activePage, setActivePage] = useState<PageName>('dashboard');
+  const [activePage, setActivePage] = useState<PageName>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('neis-active-page');
+      if (saved && [
+        'dashboard', 'kehadiran', 'jadwal', 'hari', 'kelas', 'mapel',
+        'status-kehadiran', 'hari-libur', 'siswa', 'data-pegawai',
+        'backup-restore', 'git-control', 'profile',
+      ].includes(saved)) {
+        return saved as PageName;
+      }
+    }
+    return 'dashboard';
+  });
   const [deepLink, setDeepLink] = useState<string>('');
   const hydrated = useHydrated();
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -96,6 +108,9 @@ export default function HomePage() {
   const handleNavigate = (page: PageName, dl?: string) => {
     setActivePage(page);
     setDeepLink(dl || '');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('neis-active-page', page);
+    }
   };
 
   const renderPage = () => {
