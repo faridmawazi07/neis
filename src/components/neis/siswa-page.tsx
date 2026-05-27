@@ -14,11 +14,10 @@ import {
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users, GraduationCap, UserX, ArrowRightLeft, BadgeCheck, UserCheck, FileText, FileDown, ChevronsUpDown, X, Check } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Download, Upload, RotateCcw, ArrowUpCircle, CheckCircle2, XCircle, AlertTriangle, FileSpreadsheet, Loader2, Users, GraduationCap, UserX, ArrowRightLeft, BadgeCheck, UserCheck, FileText, FileDown, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { usePagination } from '@/hooks/use-pagination';
 import { PaginationBar } from '@/components/neis/pagination-bar';
 
@@ -1038,82 +1037,85 @@ export function SiswaPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><UserCheck className="h-5 w-5" />Wali Kelas</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground mb-2">Tentukan wali kelas untuk setiap kelas:</p>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
+          <div className="space-y-2 max-h-96 overflow-y-auto">
             {kelasList.map((k: any) => {
               const siswaCount = data.filter((s: any) => s.kelas_id === k.id).length;
               const currentWaliId = waliKelasDraft[k.id] ?? null;
               const currentWali = guruList.find((g: any) => g.id === currentWaliId);
+              const searchTerm = (waliSearch[k.id] || '').toLowerCase();
               // Filter guru: exclude those already selected as wali kelas for OTHER classes
               const availableGuru = guruList.filter((g: any) => {
                 if (g.id === currentWaliId) return true; // Always show currently selected guru
-                // Check if this guru is selected for any other class in the draft
                 const isAssignedElsewhere = Object.entries(waliKelasDraft).some(
                   ([kelasId, waliId]) => kelasId !== k.id && waliId === g.id
                 );
                 return !isAssignedElsewhere;
               });
+              // Further filter by search term
+              const filteredGuru = availableGuru.filter((g: any) => {
+                if (!searchTerm) return true;
+                return g.nama.toLowerCase().includes(searchTerm) || (g.nip && g.nip.toLowerCase().includes(searchTerm));
+              });
               return (
-                <div key={k.id} className="flex items-center gap-3 p-2.5 rounded-lg border">
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium">{k.nama_kelas}</span>
-                    <span className="text-xs text-muted-foreground ml-2">({siswaCount} siswa)</span>
+                <div key={k.id} className="p-2.5 rounded-lg border space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium">{k.nama_kelas}</span>
+                      <span className="text-xs text-muted-foreground ml-2">({siswaCount} siswa)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {currentWali && (
+                        <span className="text-sm text-ocean font-medium truncate max-w-[120px]">{currentWali.nama}</span>
+                      )}
+                      {!currentWaliId && (
+                        <span className="text-xs text-muted-foreground italic">Tanpa Wali</span>
+                      )}
+                      {currentWaliId && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => setWaliKelasDraft(prev => ({ ...prev, [k.id]: null }))}
+                          disabled={waliLoading}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <Popover
-                    open={waliPopoverOpen[k.id] || false}
-                    onOpenChange={(open) => setWaliPopoverOpen(prev => ({ ...prev, [k.id]: open }))}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-48 shrink-0 justify-between text-left font-normal"
-                        disabled={waliLoading}
-                      >
-                        {waliLoading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : currentWali ? (
-                          <span className="truncate">{currentWali.nama}</span>
-                        ) : (
-                          <span className="text-muted-foreground">Tanpa Wali</span>
-                        )}
-                        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-48 p-0" align="end">
-                      <Command>
-                        <CommandInput placeholder="Cari nama/NIP..." />
-                        <CommandList>
-                          <CommandEmpty>Guru tidak ditemukan</CommandEmpty>
-                          <CommandGroup>
-                            <CommandItem
-                              value="__none__"
-                              onSelect={() => {
-                                setWaliKelasDraft(prev => ({ ...prev, [k.id]: null }));
-                                setWaliPopoverOpen(prev => ({ ...prev, [k.id]: false }));
-                              }}
-                            >
-                              <Check className={`mr-1.5 h-3.5 w-3.5 ${!currentWaliId ? 'opacity-100' : 'opacity-0'}`} />
-                              <span className="text-muted-foreground">Tanpa Wali</span>
-                            </CommandItem>
-                            {availableGuru.map((g: any) => (
-                              <CommandItem
-                                key={g.id}
-                                value={`${g.nama} ${g.nip || ''}`}
-                                onSelect={() => {
-                                  setWaliKelasDraft(prev => ({ ...prev, [k.id]: g.id }));
-                                  setWaliPopoverOpen(prev => ({ ...prev, [k.id]: false }));
-                                }}
-                              >
-                                <Check className={`mr-1.5 h-3.5 w-3.5 ${currentWaliId === g.id ? 'opacity-100' : 'opacity-0'}`} />
-                                <span className="truncate">{g.nama}</span>
-                                {g.nip && <span className="ml-1 text-xs text-muted-foreground">({g.nip})</span>}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Cari nama/NIP guru..."
+                        value={waliSearch[k.id] || ''}
+                        onChange={(e) => setWaliSearch(prev => ({ ...prev, [k.id]: e.target.value }))}
+                        className="h-8 text-sm pl-8"
+                      />
+                    </div>
+                  </div>
+                  {filteredGuru.length > 0 && (
+                    <div className="max-h-32 overflow-y-auto border rounded-md">
+                      {filteredGuru.map((g: any) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          className={`w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 flex items-center justify-between transition-colors ${currentWaliId === g.id ? 'bg-ocean/10 text-ocean font-medium' : ''}`}
+                          onClick={() => {
+                            setWaliKelasDraft(prev => ({ ...prev, [k.id]: g.id }));
+                            setWaliSearch(prev => ({ ...prev, [k.id]: '' }));
+                          }}
+                          disabled={waliLoading}
+                        >
+                          <span>{g.nama}</span>
+                          {g.nip && <span className="text-xs text-muted-foreground ml-2">({g.nip})</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {filteredGuru.length === 0 && searchTerm && (
+                    <p className="text-xs text-muted-foreground text-center py-1">Guru tidak ditemukan</p>
+                  )}
                 </div>
               );
             })}
