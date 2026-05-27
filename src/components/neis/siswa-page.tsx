@@ -698,7 +698,7 @@ export function SiswaPage() {
       </AlertDialogContent></AlertDialog>
 
       {/* Import Progress Dialog */}
-      <Dialog open={importing || importDone} onOpenChange={(open) => { if (!open && importDone) { setImportDone(false); setImporting(false); setImportSteps([]); } }}>
+      <Dialog open={importing || importDone} onOpenChange={(open) => { if (!open && importDone) { setImportDone(false); setImporting(false); setImportSteps([]); setImportVerifyResult(null); setImportPendingItems([]); } }}>
         <DialogContent className="max-w-md" onPointerDownOutside={(e) => { if (importing && !importDone) e.preventDefault(); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -737,7 +737,7 @@ export function SiswaPage() {
             )}
 
             {/* Stats cards */}
-            <div className={`grid grid-cols-3 gap-3 ${importDone ? '' : ''}`}>
+            <div className="grid grid-cols-3 gap-3">
               <div className={`text-center ${importDone ? 'p-3' : 'p-2'} bg-green-50 dark:bg-green-950 rounded-lg`}>
                 {importDone && <CheckCircle2 className="h-5 w-5 text-green-600 mx-auto mb-1" />}
                 <div className={`${importDone ? 'text-xl' : 'text-lg'} font-bold text-green-600`}>{importSuccess}</div>
@@ -746,7 +746,7 @@ export function SiswaPage() {
               <div className={`text-center ${importDone ? 'p-3' : 'p-2'} bg-yellow-50 dark:bg-yellow-950 rounded-lg`}>
                 {importDone && <AlertTriangle className="h-5 w-5 text-yellow-600 mx-auto mb-1" />}
                 <div className={`${importDone ? 'text-xl' : 'text-lg'} font-bold text-yellow-600`}>{importDuplicates}</div>
-                <div className="text-xs text-yellow-600">Duplikat</div>
+                <div className="text-xs text-yellow-600">Sudah Ada</div>
               </div>
               <div className={`text-center ${importDone ? 'p-3' : 'p-2'} bg-red-50 dark:bg-red-950 rounded-lg`}>
                 {importDone && <XCircle className="h-5 w-5 text-red-600 mx-auto mb-1" />}
@@ -755,24 +755,30 @@ export function SiswaPage() {
               </div>
             </div>
 
+            {importDone && (
+              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2.5">
+                <p className="text-xs text-blue-700 dark:text-blue-300">Data yang sudah ada tidak ditimpa, hanya data baru yang diimpor.</p>
+              </div>
+            )}
+
             {importDone && importTotal > 0 && (
               <div className="text-center">
-                <span className="text-sm text-muted-foreground">Total: {importTotal} data diproses</span>
+                <span className="text-sm text-muted-foreground">Total: {importTotal} data baru diproses</span>
               </div>
             )}
 
             {/* Error details */}
             {importDone && importErrors.length > 0 && (
               <div className="space-y-1">
-                <p className="text-sm font-medium">Detail Error:</p>
+                <p className="text-sm font-medium">Detail:</p>
                 <div className="max-h-32 overflow-y-auto text-xs space-y-1 pr-1">
                   {importErrors.slice(0, 20).map((err: any, idx: number) => (
                     <div key={idx} className={`p-1.5 rounded ${err.type === 'duplikat' ? 'bg-yellow-50 dark:bg-yellow-950 text-yellow-700' : 'bg-red-50 dark:bg-red-950 text-red-700'}`}>
-                      {err.row ? `Baris ${err.row}: ` : ''}{err.nis ? `${err.nis} - ` : ''}{err.error}
+                      {err.row ? `Baris ${err.row}: ` : ''}{err.nis ? `${err.nis} - ` : ''}{err.error || err.reason}
                     </div>
                   ))}
                   {importErrors.length > 20 && (
-                    <p className="text-muted-foreground">...dan {importErrors.length - 20} error lainnya</p>
+                    <p className="text-muted-foreground">...dan {importErrors.length - 20} lainnya</p>
                   )}
                 </div>
               </div>
@@ -780,13 +786,71 @@ export function SiswaPage() {
           </div>
           {importDone && (
             <DialogFooter>
-              <Button onClick={() => { setImportDone(false); setImporting(false); setImportSteps([]); }} className="bg-ocean hover:bg-ocean-dark text-white">
+              <Button onClick={() => { setImportDone(false); setImporting(false); setImportSteps([]); setImportVerifyResult(null); setImportPendingItems([]); }} className="bg-ocean hover:bg-ocean-dark text-white">
                 Tutup
               </Button>
             </DialogFooter>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Import Confirmation Dialog - shows verification results before importing */}
+      <AlertDialog open={importConfirmOpen} onOpenChange={(open) => { if (!open) setImportConfirmOpen(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Konfirmasi Import Data
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>Verifikasi selesai. Berikut ringkasan data yang akan diimpor:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="text-center p-2.5 bg-green-50 dark:bg-green-950 rounded-lg">
+                    <div className="text-lg font-bold text-green-600">{importVerifyResult?.newCount || 0}</div>
+                    <div className="text-xs text-green-600">Data Baru (Akan Diimpor)</div>
+                  </div>
+                  <div className="text-center p-2.5 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
+                    <div className="text-lg font-bold text-yellow-600">{importVerifyResult?.duplicateCount || 0}</div>
+                    <div className="text-xs text-yellow-600">Sudah Ada (Dilewati)</div>
+                  </div>
+                </div>
+                {(importVerifyResult?.duplicateCount || 0) > 0 && (
+                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-2.5">
+                    <p className="text-xs text-blue-700 dark:text-blue-300">Data yang sudah ada <strong>tidak akan ditimpa</strong>. Hanya data baru yang akan ditambahkan ke database.</p>
+                  </div>
+                )}
+                {(importVerifyResult?.invalidCount || 0) > 0 && (
+                  <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-2.5">
+                    <p className="text-xs text-red-700 dark:text-red-300">{importVerifyResult?.invalidCount} data tidak valid dan akan dilewati.</p>
+                  </div>
+                )}
+                {importVerifyResult?.duplicates?.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Data yang sudah ada:</p>
+                    <div className="max-h-24 overflow-y-auto text-xs space-y-1">
+                      {importVerifyResult.duplicates.slice(0, 10).map((d: any, i: number) => (
+                        <div key={i} className="p-1 rounded bg-yellow-50 dark:bg-yellow-950 text-yellow-700">
+                          {d.nis} - {d.nama} ({d.reason})
+                        </div>
+                      ))}
+                      {importVerifyResult.duplicates.length > 10 && (
+                        <p className="text-muted-foreground">...dan {importVerifyResult.duplicates.length - 10} lainnya</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setImportConfirmOpen(false); setImportDone(true); }}>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={executeImport} className="bg-ocean hover:bg-ocean-dark text-white">
+              Import {importVerifyResult?.newCount || 0} Data Baru
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Kenaikan Kelas - Mapping Dialog */}
       <Dialog open={kenaikanOpen} onOpenChange={(open) => { setKenaikanOpen(open); if (!open) { setKenaikanMapping({}); setKenaikanNewClasses({}); } }}>
