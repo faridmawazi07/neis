@@ -12,6 +12,17 @@
 
 export async function register() {
   // Only run on server side (not in browser)
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // Run database migrations on startup
+    try {
+      const { initSchema } = await import('@/lib/turso');
+      await initSchema();
+      console.log('[NEIS] Database schema initialized/migrated');
+    } catch (error: any) {
+      console.error('[NEIS] Database migration error:', error?.message || error);
+    }
+  }
+
   // Only run in development (sandbox) - not in production (Vercel)
   if (process.env.NEXT_RUNTIME === 'nodejs' && process.env.NODE_ENV !== 'production') {
     const { exec } = await import('child_process');

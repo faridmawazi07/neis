@@ -147,9 +147,11 @@ export function WaliKelasSiswaPage() {
     } catch { toast({ title: 'Error', description: 'Terjadi kesalahan', variant: 'destructive' }); }
   };
 
-  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const fileName = file.name.toLowerCase();
 
     setImporting(true);
     setImportProgress(0);
@@ -163,35 +165,105 @@ export function WaliKelasSiswaPage() {
     setImportPendingItems([]);
 
     try {
-      const XLSX = await import('xlsx');
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer);
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-      setImportSteps(prev => [...prev, { step: 'Membaca file...', status: 'done', detail: `${rows.length - 1} baris data` }]);
-
       const items: any[] = [];
       const skippedRows: any[] = [];
-      for (let i = 1; i < rows.length; i++) {
-        const [nis, nisn, nama, jk] = rows[i];
-        if (!nis || !nisn || !nama) {
-          skippedRows.push({ row: i + 1, error: 'Data tidak lengkap' });
-          continue;
+
+      if (fileName.endsWith('.pdf')) {
+        // PDF Import
+        setImportSteps(prev => [...prev, { step: 'Membaca file PDF...', status: 'processing' }]);
+        const pdfParse = (await import('pdf-parse')).default;
+        const buffer = await file.arrayBuffer();
+        const pdfData = await pdfParse(Buffer.from(buffer));
+        const text = pdfData.text;
+
+        setImportSteps(prev => [...prev, { step: 'Membaca file PDF...', status: 'done', detail: `${pdfData.numpages} halaman` }]);
+        setImportSteps(prev => [...prev, { step: 'Mem-parsing data tabel...', status: 'processing' }]);
+
+        // Parse table from PDF text
+        // Expected format: rows with NIS, NISN, Nama, JK columns
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        for (const line of lines) {
+          // Try to parse line as: number NIS NISN Nama JK
+          // or: NIS NISN Nama JK
+          const parts = line.split(/\s{2,}|\t/).filter(Boolean);
+          if (parts.length >= 3) {
+            // Skip header-like lines
+            const firstPart = parts[0].trim();
+            if (/^(no|nis|nama|kelas|jenis|jk|\d+$)/i.test(firstPart) && parts.length < 4) continue;
+
+            let nis = '', nisn = '', nama = '', jk = '';
+            let startIdx = 0;
+
+            // If first part is a row number, skip it
+            if (/^\d+$/.test(firstPart)) startIdx = 1;
+
+            if (parts.length > startIdx + 2) {
+              nis = String(parts[startIdx] || '').trim();
+              nisn = String(parts[startIdx + 1] || '').trim();
+              nama = String(parts[startIdx + 2] || '').trim();
+              jk = parts.length > startIdx + 3 ? String(parts[startIdx + 3] || '').trim() : '';
+            }
+
+            if (!nis || !nisn || !nama) {
+              skippedRows.push({ error: `Baris tidak bisa diparse: "${line.substring(0, 50)}"` });
+              continue;
+            }
+            items.push({
+              nis, nisn, nama,
+              namaKelas: myKelas.nama_kelas, kelas_id: myKelas.id, jenis_kelamin: jk || null,
+            });
+          }
         }
-        items.push({
-          nis: String(nis), nisn: String(nisn), nama: String(nama),
-          namaKelas: myKelas.nama_kelas, kelas_id: myKelas.id, jenis_kelamin: jk || null,
-        });
+
+        if (items.length === 0 && skippedRows.length === 0) {
+          setImportSteps(prev => [...prev, { step: 'Mem-parsing data tabel...', status: 'warning', detail: 'Format tabel tidak dikenali' }]);
+          // Try comma/semicolon separated values as fallback
+          for (const line of lines) {
+            const parts = line.split(/[;,\|]/).map(p => p.trim()).filter(Boolean);
+            if (parts.length >= 3) {
+              const firstPart = parts[0].trim();
+              if (/^(no|nis|nama|kelas|jenis|jk)/i.test(firstPart)) continue;
+              const nis = parts[0], nisn = parts[1], nama = parts[2], jk = parts[3] || '';
+              if (nis && nisn && nama) {
+                items.push({ nis, nisn, nama, namaKelas: myKelas.nama_kelas, kelas_id: myKelas.id, jenis_kelamin: jk || null });
+              }
+            }
+          }
+        }
+      } else {
+        // Excel Import
+        setImportSteps(prev => [...prev, { step: 'Membaca file Excel...', status: 'processing' }]);
+        const XLSX = await import('xlsx');
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer);
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+        setImportSteps(prev => [...prev, { step: 'Membaca file Excel...', status: 'done', detail: `${rows.length - 1} baris data` }]);
+
+        for (let i = 1; i < rows.length; i++) {
+          const [nis, nisn, nama, jk] = rows[i];
+          if (!nis || !nisn || !nama) {
+            skippedRows.push({ row: i + 1, error: 'Data tidak lengkap' });
+            continue;
+          }
+          items.push({
+            nis: String(nis), nisn: String(nisn), nama: String(nama),
+            namaKelas: myKelas.nama_kelas, kelas_id: myKelas.id, jenis_kelamin: jk || null,
+          });
+        }
       }
 
       if (items.length === 0) {
         setImporting(false); setImportDone(true);
         setImportErrors(skippedRows); setImportFailed(skippedRows.length);
-        toast({ title: 'Import Gagal', description: 'Tidak ada data valid', variant: 'destructive' });
+        setImportSteps(prev => [...prev, { step: 'Import selesai', status: 'error', detail: 'Tidak ada data valid' }]);
+        toast({ title: 'Import Gagal', description: 'Tidak ada data valid untuk diimpor', variant: 'destructive' });
         e.target.value = '';
         return;
       }
+
+      setImportSteps(prev => [...prev, { step: `Ditemukan ${items.length} data valid`, status: 'done' }]);
 
       // Verify
       setImportSteps(prev => [...prev, { step: 'Memverifikasi data...', status: 'processing' }]);
@@ -227,6 +299,7 @@ export function WaliKelasSiswaPage() {
       setImportConfirmOpen(true);
     } catch {
       toast({ title: 'Error', description: 'Gagal membaca file', variant: 'destructive' });
+      setImportSteps(prev => [...prev, { step: 'Gagal membaca file', status: 'error' }]);
       setImporting(false); setImportDone(true);
     }
     e.target.value = '';
@@ -360,7 +433,7 @@ export function WaliKelasSiswaPage() {
           <Button variant="outline" size="sm" onClick={() => importRef.current?.click()}>
             <Upload className="h-4 w-4 mr-1" /> Import
           </Button>
-          <input ref={importRef} type="file" accept=".xlsx,.xls,.pdf" className="hidden" onChange={handleImportExcel} />
+          <input ref={importRef} type="file" accept=".xlsx,.xls,.pdf" className="hidden" onChange={handleImportFile} />
           <Button onClick={openAdd} size="sm" className="bg-ocean hover:bg-ocean-dark text-white">
             <Plus className="h-4 w-4 mr-1" /> Tambah
           </Button>
