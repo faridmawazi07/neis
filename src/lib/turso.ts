@@ -118,6 +118,18 @@ export async function initSchema() {
     console.log('Migration check for siswa.status:', e);
   }
 
+  // Migration: add wali_kelas_id column to kelas if not exists
+  try {
+    const kelasCols = await turso.execute("PRAGMA table_info(kelas)");
+    const hasWaliKelas = kelasCols.rows.some((r: any) => r.name === 'wali_kelas_id');
+    if (!hasWaliKelas) {
+      await turso.execute("ALTER TABLE kelas ADD COLUMN wali_kelas_id TEXT DEFAULT NULL REFERENCES users(id)");
+      console.log('Migration: added wali_kelas_id column to kelas table');
+    }
+  } catch (e) {
+    console.log('Migration check for kelas.wali_kelas_id:', e);
+  }
+
   await turso.execute(`
     CREATE TABLE IF NOT EXISTS kehadiran_mengajar (
       id TEXT PRIMARY KEY,

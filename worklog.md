@@ -225,3 +225,33 @@ Stage Summary:
 - Kenaikan kelas now supports creating new classes on-the-fly during mapping
 - Import now pre-verifies against database, skips existing data, never overwrites
 - StudentAbsenceModal now properly pre-selects previously checked students when editing kehadiran
+
+---
+Task ID: 1-2
+Agent: main
+Task: Add wali_kelas_id column to kelas table + Update kelas API to handle wali kelas
+
+Work Log:
+- Added migration in `src/lib/turso.ts` after siswa.status migration to add `wali_kelas_id` column to kelas table
+  - Uses PRAGMA table_info to check if column already exists before altering
+  - Column type: TEXT DEFAULT NULL REFERENCES users(id)
+- Updated `src/app/api/kelas/route.ts` with comprehensive wali kelas support:
+  - GET: Changed query to LEFT JOIN users table, now returns `wali_kelas_id` and `wali_kelas_nama`
+  - GET ?action=guru-list: Returns all approved guru users (id, nip, nama) for wali kelas dropdown
+  - GET ?action=my-kelas&guru_id=xxx: Returns the class where a guru is assigned as wali kelas
+  - POST: Now accepts `wali_kelas_id` alongside `nama_kelas`, includes wali info in response
+  - PUT: Completely rewritten with dynamic UPDATE query building
+    - Accepts both `nama_kelas` and `wali_kelas_id` independently
+    - `nama_kelas` changes remain admin-only
+    - `wali_kelas_id` changes allowed for both admin AND pegawai roles
+    - `wali_kelas_id` can be set to null to remove wali kelas assignment
+    - Validates that wali_kelas_id references an approved guru user
+    - Returns updated row with wali kelas name joined
+- Lint passes cleanly
+
+Stage Summary:
+- kelas table now has wali_kelas_id column referencing users(id)
+- kelas API fully supports wali kelas CRUD operations
+- Guru list endpoint available for dropdown population
+- My-kelas endpoint available for guru to find their assigned class
+- Pegawai can update wali kelas assignments (admin can update all fields)
